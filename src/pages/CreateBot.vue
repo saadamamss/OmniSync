@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import DashboardLayout from '@/layouts/DashboardLayout.vue';
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { supabase } from '@/integrations/supabase/client';
 import { 
@@ -35,6 +35,10 @@ const PLAN_LIMITS: Record<string, number> = {
   'pro': 5,
   'enterprise': 1000
 };
+
+const canUsePDF = computed(() =>
+  ['pro', 'enterprise'].includes(userPlan.value)
+);
 
 const checkPlanLimits = async () => {
   checkingPlan.value = true;
@@ -254,10 +258,17 @@ onMounted(checkPlanLimits);
                 <Globe :class="['w-8 h-8 mb-4', sourceType === 'website' ? 'text-orange-500' : 'text-gray-400']" />
                 <h3 class="font-bold">Website</h3>
               </button>
-              <button @click="sourceType = 'pdf'" 
-                :class="['p-6 rounded-2xl border-2 text-left transition-all', sourceType === 'pdf' ? 'border-orange-500 bg-orange-50' : 'border-gray-100 bg-white hover:border-gray-200']">
+              <button @click="canUsePDF ? sourceType = 'pdf' : showToast('PDF support requires Pro plan.', 'warning')" 
+                :class="['p-6 rounded-2xl border-2 text-left transition-all relative overflow-hidden', !canUsePDF ? 'opacity-60 cursor-not-allowed' : '', sourceType === 'pdf' ? 'border-orange-500 bg-orange-50' : 'border-gray-100 bg-white hover:border-gray-200']"
+                :disabled="!canUsePDF">
                 <FileText :class="['w-8 h-8 mb-4', sourceType === 'pdf' ? 'text-orange-500' : 'text-gray-400']" />
                 <h3 class="font-bold">PDF File</h3>
+                <!-- Pro Badge -->
+                <span v-if="!canUsePDF"
+                  class="absolute top-3 right-3 text-[10px] font-bold bg-orange-100
+                         text-orange-700 px-2 py-0.5 rounded-full">
+                  PRO
+                </span>
               </button>
               <button @click="sourceType = 'text'" 
                 :class="['p-6 rounded-2xl border-2 text-left transition-all', sourceType === 'text' ? 'border-orange-500 bg-orange-50' : 'border-gray-100 bg-white hover:border-gray-200']">

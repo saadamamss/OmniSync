@@ -205,3 +205,53 @@ begin
     );
 end;
 $$ language plpgsql security definer;
+
+-- 6. message_usage table
+create table if not exists message_usage (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references auth.users(id) on delete cascade not null,
+  month text not null, -- Format "YYYY-MM" e.g. "2024-03"
+  message_count integer not null default 0,
+  updated_at timestamptz default now(),
+  unique(user_id, month)
+);
+
+alter table message_usage enable row level security;
+
+drop policy if exists "Users can view own usage" on message_usage;
+create policy "Users can view own usage"
+  on message_usage for select using (auth.uid() = user_id);
+
+-- Function to increment message count
+create or replace function increment_message_usage(p_user_id uuid)
+returns integer as $$
+declare
+  v_month text := to_char(now(), 'YYYY-MM');
+  v_count integer;
+begin
+  insert into message_usage (user_id, month, message_count)
+  values (p_user_id, v_month, 1)
+  on conflict (user_id, month)
+  do update set
+    message_count = message_usage.message_count + 1,
+    updated_at = now()
+  returning message_count into v_count;
+
+  return v_count;
+end;
+$$ language plpgsql security definer;
+
+-- Function to get current month usage
+create or replace function get_current_usage(p_user_id uuid)
+returns integer as $$
+declare
+  v_month text := to_char(now(), 'YYYY-MM');
+  v_count integer;
+begin
+  select message_count into v_count
+  from message_usage
+  where user_id = p_user_id and month = v_month;
+
+  return coalesce(v_count, 0);
+end;
+$$ language plpgsql security definer;

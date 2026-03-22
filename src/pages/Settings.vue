@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import DashboardLayout from '@/layouts/DashboardLayout.vue';
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { supabase } from '@/integrations/supabase/client';
 import { useNotification } from '@/composables/useNotification';
 import { 
@@ -45,6 +45,24 @@ const profile = ref({
   plan: 'starter'
 });
 
+const monthlyUsage = ref(0);
+
+const MESSAGE_LIMITS: Record<string, number> = {
+  starter: 1000,
+  pro: 10000,
+  enterprise: Infinity
+};
+
+const planLimit = computed(() => MESSAGE_LIMITS[profile.value.plan]);
+const usagePercent = computed(() => {
+  if (planLimit.value === Infinity) return 5;
+  return Math.min(Math.round((monthlyUsage.value / planLimit.value) * 100), 100);
+});
+const isNearLimit = computed(() => {
+  if (planLimit.value === Infinity) return false;
+  return (monthlyUsage.value / planLimit.value) >= 0.8;
+});
+
 const security = ref({
   newPassword: '',
   confirmPassword: ''
@@ -69,6 +87,11 @@ const fetchProfile = async () => {
       profile.value.avatar_url = data.avatar_url || '';
       profile.value.plan = data.plan || 'starter';
     }
+
+    // Fetch monthly usage
+    const { data: usageData } = await supabase
+      .rpc('get_current_usage', { p_user_id: authUser.id });
+    monthlyUsage.value = usageData || 0;
   }
   loading.value = false;
 };
@@ -316,6 +339,27 @@ onMounted(fetchProfile);
                   <span>{{ profile.plan === 'starter' ? '1 Chatbot limit' : profile.plan === 'pro' ? '5 Chatbots limit' : 'Unlimited Chatbots' }}</span>
                 </div>
               </div>
+            </div>
+
+            <!-- Monthly Usage Display -->
+            <div class="bg-gray-50 rounded-2xl p-6 mt-4">
+              <div class="flex justify-between items-center mb-3">
+                <span class="text-sm font-bold text-gray-700">Monthly Messages Used</span>
+                <span class="text-sm font-bold"
+                  :class="isNearLimit ? 'text-red-600' : 'text-gray-900'">
+                  {{ monthlyUsage }} / {{ planLimit === Infinity ? 'Unlimited' : planLimit }}
+                </span>
+              </div>
+              <div class="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
+                <div
+                  :class="['h-full rounded-full transition-all', isNearLimit ? 'bg-red-500' : 'bg-orange-500']"
+                  :style="{ width: usagePercent + '%' }"
+                ></div>
+              </div>
+              <p v-if="isNearLimit" class="text-xs text-red-500 mt-2 font-bold">
+                ⚠️ You're approaching your monthly limit. Consider upgrading.
+              </p>
+              <p class="text-xs text-gray-400 mt-1">Resets on the 1st of each month.</p>
             </div>
 
             <!-- Plan Actions -->

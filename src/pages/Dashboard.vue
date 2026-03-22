@@ -30,7 +30,8 @@ const userPlan = ref('starter');
 const stats = ref({
   totalBots: 0,
   totalConversations: 0,
-  totalMessages: 0
+  totalMessages: 0,
+  monthlyMessages: 0
 });
 
 const PLAN_LIMITS: Record<string, number> = {
@@ -39,8 +40,26 @@ const PLAN_LIMITS: Record<string, number> = {
   'enterprise': 100
 };
 
+const MESSAGE_LIMITS: Record<string, number> = {
+  starter: 1000,
+  pro: 10000,
+  enterprise: Infinity
+};
+
 const isOverLimit = computed(() => {
   return stats.value.totalBots > PLAN_LIMITS[userPlan.value];
+});
+
+const isNearLimit = computed(() => {
+  const limit = MESSAGE_LIMITS[userPlan.value];
+  if (limit === Infinity) return false;
+  return (stats.value.monthlyMessages / limit) >= 0.8; // 80% warning
+});
+
+const usagePercentage = computed(() => {
+  const limit = MESSAGE_LIMITS[userPlan.value];
+  if (limit === Infinity) return 5;
+  return Math.min(Math.round((stats.value.monthlyMessages / limit) * 100), 100);
 });
 
 const onboardingSteps = computed(() => [
@@ -50,7 +69,7 @@ const onboardingSteps = computed(() => [
   { id: 4, title: 'Embed on your website', done: stats.value.totalConversations > 0, link: '/dashboard/bots' }
 ]);
 
-const usagePercentage = computed(() => {
+const botUsagePercentage = computed(() => {
   const limit = PLAN_LIMITS[userPlan.value] || 1;
   return Math.min(Math.round((stats.value.totalBots / limit) * 100), 100);
 });
@@ -92,6 +111,11 @@ const fetchDashboardData = async () => {
   if (recentConv) {
     recentConversations.value = recentConv;
   }
+
+  const { data: usageData } = await supabase
+    .rpc('get_current_usage', { p_user_id: user.id });
+  
+  stats.value.monthlyMessages = usageData || 0;
 
   const { count: msgCount } = await supabase
     .from('messages')
@@ -152,7 +176,7 @@ onMounted(() => {
       </div>
 
       <!-- Stats Grid -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
         <div class="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm relative overflow-hidden group">
           <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
             <MessageSquare class="w-12 h-12 text-orange-600" />
@@ -165,7 +189,25 @@ onMounted(() => {
               <span :class="isOverLimit ? 'text-red-600' : 'text-orange-600'">{{ stats.totalBots }} / {{ PLAN_LIMITS[userPlan] }}</span>
             </div>
             <div class="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
-              <div :class="['h-full transition-all duration-1000', isOverLimit ? 'bg-red-500' : 'bg-orange-500']" :style="{ width: usagePercentage + '%' }"></div>
+              <div :class="['h-full transition-all duration-1000', isOverLimit ? 'bg-red-500' : 'bg-orange-500']" :style="{ width: botUsagePercentage + '%' }"></div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Monthly Messages Card -->
+        <div class="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm relative overflow-hidden">
+          <p class="text-sm font-bold text-gray-400 uppercase tracking-wider">Monthly Messages</p>
+          <p class="text-4xl font-black text-gray-900 mt-2">{{ stats.monthlyMessages }}</p>
+          <div class="mt-4">
+            <div class="flex justify-between text-[10px] font-bold mb-1">
+              <span class="text-gray-400">USAGE</span>
+              <span :class="isNearLimit ? 'text-red-600' : 'text-orange-600'">{{ stats.monthlyMessages }} / {{ MESSAGE_LIMITS[userPlan] === Infinity ? '∞' : MESSAGE_LIMITS[userPlan] }}</span>
+            </div>
+            <div class="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+              <div
+                :class="['h-full transition-all duration-1000', isNearLimit ? 'bg-red-500' : 'bg-orange-500']"
+                :style="{ width: usagePercentage + '%' }"
+              ></div>
             </div>
           </div>
         </div>

@@ -1,5 +1,23 @@
 <script setup lang="ts">
+import { ref, onMounted, computed } from 'vue';
 import { Palette, Brain, UserPlus, ListPlus, Layout, Trash2 } from 'lucide-vue-next';
+import { supabase } from '@/integrations/supabase/client';
+
+const userPlan = ref('starter');
+
+onMounted(async () => {
+  const { data: { user } } = await supabase.auth.getUser();
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('plan')
+    .eq('id', user?.id)
+    .single();
+  userPlan.value = profile?.plan || 'starter';
+});
+
+const canCustomizeBranding = computed(() =>
+  ['pro', 'enterprise'].includes(userPlan.value)
+);
 
 const props = defineProps<{
   settings: {
@@ -42,7 +60,25 @@ const updateQuestion = (index: number, value: string) => {
 <template>
   <div class="space-y-6">
     <!-- Visual Appearance -->
-    <div class="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm space-y-8">
+    <div class="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm space-y-8 relative">
+      <!-- Upgrade Banner for Starter -->
+      <div v-if="!canCustomizeBranding"
+        class="absolute inset-0 bg-white/80 backdrop-blur-sm rounded-[2.5rem] z-10
+                flex flex-col items-center justify-center space-y-4">
+        <div class="bg-orange-50 p-4 rounded-2xl">
+          <Palette class="w-8 h-8 text-orange-500" />
+        </div>
+        <h4 class="font-bold text-gray-900">Custom Branding</h4>
+        <p class="text-sm text-gray-500 text-center max-w-xs">
+          Customize colors and appearance with the Pro plan.
+        </p>
+        <router-link to="/dashboard/settings"
+          class="bg-orange-500 text-white px-6 py-2.5 rounded-xl font-bold
+                 hover:bg-orange-600 transition-all text-sm">
+          Upgrade to Pro
+        </router-link>
+      </div>
+
       <div class="flex items-center space-x-3 mb-2">
         <Palette class="w-6 h-6 text-orange-500" />
         <h3 class="text-xl font-bold">Visual Customization</h3>

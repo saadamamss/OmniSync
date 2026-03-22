@@ -30,6 +30,46 @@ serve(async (req) => {
       );
     }
 
+    // Get user data and plan
+    const { data: botOwner } = await supabase
+      .from('chatbots')
+      .select('user_id')
+      .eq('id', bot_id)
+      .single();
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('plan')
+      .eq('id', botOwner.user_id)
+      .single();
+
+    const plan = profile?.plan || 'starter';
+
+    // Message limits
+    const MESSAGE_LIMITS: Record<string, number> = {
+      starter: 1000,
+      pro: 10000,
+      enterprise: Infinity
+    };
+
+    // Check message limits
+    const currentUsage = await supabase
+      .rpc('get_current_usage', { p_user_id: botOwner.user_id });
+
+    const limit = MESSAGE_LIMITS[plan];
+
+    if (currentUsage.data >= limit) {
+      return new Response(
+        JSON.stringify({
+          reply: "I'm sorry, this chatbot has reached its monthly message limit. Please try again next month."
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Increment count
+    await supabase.rpc('increment_message_usage', { p_user_id: botOwner.user_id });
+
     const groqKey = Deno.env.get('GROQ_API_KEY');
     const openAiKey = Deno.env.get('OPENAI_API_KEY');
     
