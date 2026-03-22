@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import DashboardLayout from '@/layouts/DashboardLayout.vue';
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { supabase } from '@/integrations/supabase/client';
 import { 
   MessageSquare, 
@@ -17,6 +17,7 @@ const loading = ref(true);
 const selectedConversation = ref<any>(null);
 const messages = ref<any[]>([]);
 const loadingMessages = ref(false);
+const searchQuery = ref('');
 
 const fetchConversations = async () => {
   loading.value = true;
@@ -59,6 +60,18 @@ const formatDate = (date: string) => {
     minute: '2-digit'
   });
 };
+
+const filteredConversations = computed(() => {
+  if (!searchQuery.value.trim()) {
+    return conversations.value;
+  }
+  
+  const query = searchQuery.value.toLowerCase();
+  return conversations.value.filter(conv => 
+    conv.chatbots?.name?.toLowerCase().includes(query) ||
+    conv.visitor_id?.toLowerCase().includes(query)
+  );
+});
 </script>
 
 <template>
@@ -75,7 +88,7 @@ const formatDate = (date: string) => {
           <div class="p-4 border-b border-gray-50">
             <div class="relative">
               <Search class="absolute left-3 top-2.5 h-4 w-4 text-gray-400" />
-              <input type="text" placeholder="Search conversations..." 
+              <input type="text" v-model="searchQuery" placeholder="Search conversations..." 
                 class="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-100 rounded-xl text-sm focus:ring-2 focus:ring-orange-500 outline-none" />
             </div>
           </div>
@@ -84,11 +97,11 @@ const formatDate = (date: string) => {
             <div v-if="loading" class="p-10 flex justify-center">
               <Loader2 class="w-6 h-6 animate-spin text-orange-500" />
             </div>
-            <div v-else-if="conversations.length === 0" class="p-10 text-center">
+            <div v-else-if="filteredConversations.length === 0" class="p-10 text-center">
               <Inbox class="w-10 h-10 text-gray-200 mx-auto mb-4" />
-              <p class="text-sm text-gray-400">No conversations yet</p>
+              <p class="text-sm text-gray-400">{{ searchQuery ? 'No conversations found' : 'No conversations yet' }}</p>
             </div>
-            <button v-for="conv in conversations" :key="conv.id"
+            <button v-for="conv in filteredConversations" :key="conv.id"
               @click="fetchMessages(conv)"
               :class="['w-full p-4 text-left border-b border-gray-50 transition-all hover:bg-gray-50 flex items-center justify-between group', selectedConversation?.id === conv.id ? 'bg-orange-50' : '']">
               <div class="flex items-center space-x-3">

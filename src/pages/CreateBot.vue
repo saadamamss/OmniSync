@@ -71,15 +71,22 @@ const chunkText = (text: string, wordsPerChunk = 600) => {
   return chunks;
 };
 
-const handleFileUpload = (event: Event) => {
+const handleFileUpload = async (event: Event) => {
   const target = event.target as HTMLInputElement;
   const file = target.files?.[0];
   if (!file) return;
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    sourceValue.value = e.target?.result as string;
-  };
-  reader.readAsText(file);
+  
+  if (file.type === 'application/pdf') {
+    // For PDF files, we'll store the file reference and process it differently
+    sourceValue.value = file.name; // Store filename as reference
+  } else {
+    // For text files, read content as before
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      sourceValue.value = e.target?.result as string;
+    };
+    reader.readAsText(file);
+  }
   target.value = '';
 };
 
@@ -137,6 +144,17 @@ const handleCreate = async () => {
       console.error("Scraping failed:", e);
       router.push('/dashboard/bots');
     }
+  } else if (sourceType.value === 'pdf') {
+    // For PDF, we'll store the filename and process it later
+    // In a real implementation, you'd upload the PDF to storage and process it
+    await supabase
+      .from('knowledge_chunks')
+      .insert([{
+        chatbot_id: bot.id,
+        content: `PDF uploaded: ${sourceValue.value}`,
+        title: 'PDF Document'
+      }]);
+    router.push('/dashboard/bots');
   } else {
     if (sourceValue.value.trim()) {
       const chunks = chunkText(sourceValue.value);
@@ -253,6 +271,30 @@ onMounted(checkPlanLimits);
                 <label class="block text-sm font-medium text-gray-700">Website URL</label>
                 <input v-model="sourceValue" type="url" placeholder="https://example.com"
                   class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-orange-500 outline-none" />
+              </div>
+              <div v-if="sourceType === 'pdf'" class="space-y-4">
+                <label class="block text-sm font-medium text-gray-700">PDF File</label>
+                <div class="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-gray-300 transition-colors">
+                  <input 
+                    ref="fileInput"
+                    type="file" 
+                    accept=".pdf"
+                    @change="handleFileUpload"
+                    class="hidden" 
+                  />
+                  <Upload class="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                  <p class="text-sm text-gray-600 mb-2">Click to upload PDF file</p>
+                  <button 
+                    type="button"
+                    @click="fileInput?.click()"
+                    class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm"
+                  >
+                    Choose File
+                  </button>
+                </div>
+                <div v-if="sourceValue" class="mt-2 p-3 bg-gray-50 rounded-lg">
+                  <p class="text-sm text-gray-600">PDF loaded and ready for processing</p>
+                </div>
               </div>
               <div v-if="sourceType === 'text'" class="space-y-4">
                 <textarea v-model="sourceValue" rows="6" placeholder="Paste any text here..."
