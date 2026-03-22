@@ -1,0 +1,33 @@
+{
+  "name": "apex-chat-app",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@popperjs/core": "^2.11.8",
+    "@stripe/stripe-js": "^8.9.0",
+    "@supabase/supabase-js": "^2.98.0",
+    "@vueuse/motion": "^2.2.6",
+    "aos": "^2.3.4",
+    "jquery": "^4.0.0",
+    "lucide-vue-next": "^0.454.0",
+    "vue": "^3.5.12",
+    "vue-router": "^4.4.5"
+  },
+  "devDependencies": {
+    "@types/aos": "^3.0.7",
+    "@types/node": "^25.3.5",
+    "@vitejs/plugin-vue": "^5.1.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.14",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10",
+    "vue-tsc": "^2.1.6"
+  }
+}

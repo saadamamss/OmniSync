@@ -1,0 +1,6 @@
+.dyad/
+.claude/
+dist
+node_modules
+node_modules/
+
