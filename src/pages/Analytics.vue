@@ -25,23 +25,60 @@ const stats = ref({
 
 const botPerformance = ref<any[]>([]);
 
+const chartData = ref<number[]>([]);
+
 const fetchAnalytics = async () => {
   loading.value = true;
   
+  // Get total counts
   const { count: msgCount } = await supabase.from('messages').select('*', { count: 'exact', head: true });
   stats.value.totalMessages = msgCount || 0;
 
   const { count: convCount } = await supabase.from('conversations').select('*', { count: 'exact', head: true });
   stats.value.totalConversations = convCount || 0;
 
+  // Get last 7 days message data
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  
+  const { data: dailyMessages } = await supabase
+    .from('messages')
+    .select('created_at')
+    .gte('created_at', sevenDaysAgo.toISOString())
+    .order('created_at');
+  
+  // Process daily message counts for chart
+  const dailyCounts = new Array(7).fill(0);
+  if (dailyMessages) {
+    dailyMessages.forEach(msg => {
+      const dayIndex = new Date(msg.created_at).getDay();
+      dailyCounts[dayIndex] = (dailyCounts[dayIndex] || 0) + 1;
+    });
+  }
+  chartData.value = dailyCounts;
+
+  // Get bot performance with real message counts
   const { data: bots } = await supabase.from('chatbots').select('id, name');
   if (bots) {
-    botPerformance.value = bots.map(bot => ({
-      name: bot.name,
-      messages: Math.floor(Math.random() * 500) + 50,
-      leads: Math.floor(Math.random() * 50) + 5,
-      satisfaction: (Math.random() * (5 - 4) + 4).toFixed(1)
-    })).sort((a, b) => b.messages - a.messages);
+    const botMessageCounts = await Promise.all(
+      bots.map(async (bot) => {
+        const { count } = await supabase
+          .from('messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('chatbot_id', bot.id);
+        return { botId: bot.id, count: count || 0 };
+      })
+    );
+    
+    botPerformance.value = bots.map(bot => {
+      const messageCount = botMessageCounts.find(bm => bm.botId === bot.id)?.count || 0;
+      return {
+        name: bot.name,
+        messages: messageCount,
+        leads: 0, // Will be calculated later when leads tracking is implemented
+        satisfaction: 'Coming soon'
+      };
+    }).sort((a, b) => b.messages - a.messages);
   }
 
   loading.value = false;
@@ -121,10 +158,10 @@ onMounted(fetchAnalytics);
               </div>
             </div>
             <div class="flex items-end justify-between h-48 space-x-2">
-              <div v-for="i in 7" :key="i" class="flex-1 flex flex-col items-center group">
+              <div v-for="(height, i) in chartData" :key="i" class="flex-1 flex flex-col items-center group">
                 <div class="w-full bg-orange-100 rounded-t-xl transition-all group-hover:bg-orange-500" 
-                  :style="{ height: Math.floor(Math.random() * 80 + 20) + '%' }"></div>
-                <span class="text-[10px] font-bold text-gray-400 mt-3">Day {{ i }}</span>
+                  :style="{ height: Math.max(height > 0 ? (height / Math.max(...chartData) * 80) : 20, 20) + '%' }"></div>
+                <span class="text-[10px] font-bold text-gray-400 mt-2">{{ ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][i] }}</span>
               </div>
             </div>
           </div>
@@ -170,10 +207,7 @@ onMounted(fetchAnalytics);
                   <td class="px-8 py-6 text-gray-600">{{ bot.messages }}</td>
                   <td class="px-8 py-6 text-gray-600">{{ bot.leads }}</td>
                   <td class="px-8 py-6">
-                    <div class="flex items-center text-orange-500 font-bold">
-                      <TrendingUp class="w-4 h-4 mr-2" />
-                      {{ bot.satisfaction }} / 5.0
-                    </div>
+                    <span class="text-gray-400 font-medium">Coming soon</span>
                   </td>
                 </tr>
               </tbody>
