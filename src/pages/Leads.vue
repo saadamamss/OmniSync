@@ -1,12 +1,22 @@
 <script setup lang="ts">
 import DashboardLayout from '@/layouts/DashboardLayout.vue';
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { supabase } from '@/integrations/supabase/client';
 import { User, Mail, Calendar, Search, Download, Loader2, Inbox } from 'lucide-vue-next';
 
 const leads = ref<any[]>([]);
 const loading = ref(true);
 const searchQuery = ref('');
+
+const filteredLeads = computed(() => {
+  if (!searchQuery.value) return leads.value;
+  const q = searchQuery.value.toLowerCase();
+  return leads.value.filter(lead =>
+    lead.name.toLowerCase().includes(q) ||
+    lead.email.toLowerCase().includes(q) ||
+    lead.chatbots?.name?.toLowerCase().includes(q)
+  );
+});
 
 const fetchLeads = async () => {
   loading.value = true;
@@ -87,7 +97,7 @@ onMounted(fetchLeads);
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-50">
-              <tr v-for="lead in leads" :key="lead.id" class="hover:bg-gray-50/50 transition-colors">
+              <tr v-for="lead in filteredLeads" :key="lead.id" class="hover:bg-gray-50/50 transition-colors">
                 <td class="px-8 py-6">
                   <div class="flex items-center space-x-3">
                     <div class="w-10 h-10 bg-orange-50 rounded-full flex items-center justify-center text-orange-600">

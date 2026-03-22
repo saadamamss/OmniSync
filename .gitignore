@@ -3,4 +3,5 @@
 dist
 node_modules
 node_modules/
-
+repomix-output.xml
+plan/

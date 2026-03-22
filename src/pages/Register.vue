@@ -3,9 +3,11 @@ import { ref, onMounted } from 'vue';
 import { supabase } from '@/integrations/supabase/client';
 import { useRouter, useRoute } from 'vue-router';
 import { UserPlus, Mail, Lock, User, Loader2, ArrowLeft } from 'lucide-vue-next';
+import { useNotification } from '@/composables/useNotification';
 
 const router = useRouter();
 const route = useRoute();
+const { showToast } = useNotification();
 const email = ref('');
 const password = ref('');
 const fullName = ref('');
@@ -43,8 +45,8 @@ const handleRegister = async () => {
       .update({ plan: selectedPlan.value })
       .eq('id', data.user.id);
 
-    alert('Registration successful! Please check your email for verification.');
-    router.push('/login');
+    showToast('Registration successful! Please check your email.', 'success');
+    setTimeout(() => router.push('/login'), 1500);
   }
 };
 </script>

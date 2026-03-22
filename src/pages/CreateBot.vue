@@ -15,8 +15,10 @@ import {
   CheckCircle2,
   Sparkles
 } from 'lucide-vue-next';
+import { useNotification } from '@/composables/useNotification';
 
 const router = useRouter();
+const { showToast } = useNotification();
 const step = ref(1);
 const botName = ref('');
 const sourceType = ref('website');
@@ -109,7 +111,7 @@ const handleCreate = async () => {
     .single();
 
   if (botError) {
-    alert(botError.message);
+    showToast(botError.message, 'error');
     loading.value = false;
     return;
   }
