@@ -34,13 +34,36 @@ watch(isOpen, (newVal) => {
 
 const startChat = async () => {
   if (!leadData.value.name || !leadData.value.email) return;
-  const { data } = await supabase.from('conversations').insert({
-    chatbot_id: bot.value.id,
-    visitor_id: `${leadData.value.name} (${leadData.value.email})`
-  }).select().single();
-  if (data) {
-    conversationId.value = data.id;
-    showLeadForm.value = false;
+  
+  try {
+    const { data, error } = await supabase.from('conversations').insert({
+      chatbot_id: bot.value.id,
+      visitor_id: `${leadData.value.name} (${leadData.value.email})`
+    }).select().single();
+    
+    if (error) {
+      console.error('Error creating conversation:', error);
+      // Fallback: create conversation without visitor_id if RLS is blocking it
+      const { data: fallbackData, error: fallbackError } = await supabase.from('conversations').insert({
+        chatbot_id: bot.value.id,
+        visitor_id: null
+      }).select().single();
+      
+      if (fallbackError) {
+        console.error('Fallback error:', fallbackError);
+        return;
+      }
+      
+      if (fallbackData) {
+        conversationId.value = fallbackData.id;
+        showLeadForm.value = false;
+      }
+    } else if (data) {
+      conversationId.value = data.id;
+      showLeadForm.value = false;
+    }
+  } catch (err) {
+    console.error('Unexpected error in startChat:', err);
   }
 };
 
