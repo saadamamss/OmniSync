@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import DashboardLayout from "@/layouts/DashboardLayout.vue";
-import { ref, onMounted } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { ref, onMounted, onBeforeUnmount, watch } from "vue";
+import { useRoute, useRouter, onBeforeRouteLeave } from "vue-router";
 import { supabase } from "@/integrations/supabase/client";
 import { useNotification } from "@/composables/useNotification";
 import {
@@ -12,7 +12,8 @@ import {
   Palette,
   MessageCircle,
   BrainCircuit,
-  History
+  History,
+  AlertTriangle
 } from "lucide-vue-next";
 
 import BotTraining from "@/components/bot/BotTraining.vue";
@@ -22,14 +23,17 @@ import BotEmbed from "@/components/bot/BotEmbed.vue";
 import BotPreview from "@/components/bot/BotPreview.vue";
 import BotConversations from "@/components/bot/BotConversations.vue";
 
-const { showToast } = useNotification();
+const { showToast, askConfirm } = useNotification();
 const route = useRoute();
 const router = useRouter();
 const bot = ref<any>(null);
+const originalBot = ref<any>(null);
 const chunks = ref<any[]>([]);
+const originalChunks = ref<any[]>([]);
 const loading = ref(true);
 const saving = ref(false);
 const activeTab = ref("training");
+const hasUnsavedChanges = ref(false);
 
 const fetchBotData = async () => {
   const id = route.params.id;
@@ -52,6 +56,7 @@ const fetchBotData = async () => {
   
   if (botData.settings.source_value === undefined) botData.settings.source_value = "";
   bot.value = botData;
+  originalBot.value = JSON.parse(JSON.stringify(botData)); // Deep copy for comparison
   await fetchChunks();
   loading.value = false;
 };
@@ -59,11 +64,30 @@ const fetchBotData = async () => {
 const fetchChunks = async () => {
   const { data: chunksData } = await supabase.from("knowledge_chunks").select("*").eq("chatbot_id", bot.value.id).order('created_at', { ascending: true });
   chunks.value = chunksData?.map(c => ({ ...c, isExpanded: false })) || [];
+  originalChunks.value = JSON.parse(JSON.stringify(chunks.value)); // Deep copy for comparison
 };
 
-const handleAddChunk = (newChunk: any) => chunks.value.push(newChunk);
-const handleBulkAdd = (newChunks: any[]) => chunks.value = [...chunks.value, ...newChunks];
-const handleRemoveChunk = (index: number) => chunks.value.splice(index, 1);
+const checkForChanges = () => {
+  if (!originalBot.value || !bot.value) return false;
+  
+  const botChanged = JSON.stringify(bot.value) !== JSON.stringify(originalBot.value);
+  const chunksChanged = JSON.stringify(chunks.value) !== JSON.stringify(originalChunks.value);
+  
+  return botChanged || chunksChanged;
+};
+
+const handleAddChunk = (newChunk: any) => {
+  chunks.value.push(newChunk);
+  hasUnsavedChanges.value = true;
+};
+const handleBulkAdd = (newChunks: any[]) => {
+  chunks.value = [...chunks.value, ...newChunks];
+  hasUnsavedChanges.value = true;
+};
+const handleRemoveChunk = (index: number) => {
+  chunks.value.splice(index, 1);
+  hasUnsavedChanges.value = true;
+};
 
 const handleSave = async () => {
   saving.value = true;
@@ -90,8 +114,37 @@ const handleSave = async () => {
 
   showToast("Settings saved successfully!", 'success');
   saving.value = false;
+  hasUnsavedChanges.value = false;
   await fetchChunks();
+  
+  // Update original data after successful save
+  originalBot.value = JSON.parse(JSON.stringify(bot.value));
+  originalChunks.value = JSON.parse(JSON.stringify(chunks.value));
 };
+
+// Navigation guard to warn about unsaved changes
+onBeforeRouteLeave(async (to, from, next) => {
+  if (hasUnsavedChanges.value && checkForChanges()) {
+    const confirmed = await askConfirm(
+      'Unsaved Changes',
+      'You have unsaved changes. Are you sure you want to leave without saving?'
+    );
+    if (confirmed) {
+      next();
+    } else {
+      next(false);
+    }
+  } else {
+    next();
+  }
+});
+
+// Watch for changes to bot data
+watch([bot, chunks], () => {
+  if (originalBot.value && originalChunks.value) {
+    hasUnsavedChanges.value = checkForChanges();
+  }
+}, { deep: true });
 
 onMounted(fetchBotData);
 </script>
@@ -114,6 +167,10 @@ onMounted(fetchBotData);
             <div class="flex items-center space-x-2 mt-1">
               <span class="text-xs px-2 py-0.5 bg-green-50 text-green-600 rounded-full font-bold">Active</span>
               <span class="text-xs text-gray-400">ID: {{ bot.id }}</span>
+              <span v-if="hasUnsavedChanges" class="flex items-center text-xs px-2 py-0.5 bg-orange-50 text-orange-600 rounded-full font-bold">
+                <AlertTriangle class="w-3 h-3 mr-1" />
+                Unsaved changes
+              </span>
             </div>
           </div>
         </div>

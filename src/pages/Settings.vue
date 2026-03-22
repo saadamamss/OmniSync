@@ -25,6 +25,13 @@ const showPaymentModal = ref(false);
 const selectedPlanToUpgrade = ref('');
 const user = ref<any>(null);
 
+// Plan pricing configuration
+const PLAN_PRICES = {
+  starter: { monthly: 0, yearly: 0, display: 'Free' },
+  pro: { monthly: 49, yearly: 470, display: '$49/mo' },
+  enterprise: { monthly: 199, yearly: 1900, display: '$199/mo' }
+};
+
 const profile = ref({
   full_name: '',
   email: '',
@@ -247,7 +254,7 @@ onMounted(fetchProfile);
               <!-- Upgrade Options -->
               <button v-if="profile.plan === 'starter'" @click="openUpgradeModal('pro')" class="p-6 rounded-2xl border border-gray-200 hover:border-orange-500 transition-all text-left group">
                 <span class="font-bold text-lg block mb-1">Upgrade to Pro</span>
-                <p class="text-sm text-gray-500 mb-4">Get 5 chatbots and priority support for $49/mo.</p>
+                <p class="text-sm text-gray-500 mb-4">Get 5 chatbots and priority support for {{ PLAN_PRICES.pro.display }}.</p>
                 <span class="text-orange-600 font-bold group-hover:underline">Upgrade Now →</span>
               </button>
               
@@ -295,7 +302,7 @@ onMounted(fetchProfile);
               <p class="text-xs text-gray-500 uppercase font-bold">Selected Plan</p>
               <p class="font-bold text-gray-900 capitalize text-lg">{{ selectedPlanToUpgrade }}</p>
             </div>
-            <p class="text-2xl font-black text-gray-900">{{ selectedPlanToUpgrade === 'pro' ? '$49' : '$199' }}<span class="text-xs text-gray-400">/mo</span></p>
+            <p class="text-2xl font-black text-gray-900">{{ PLAN_PRICES[selectedPlanToUpgrade as keyof typeof PLAN_PRICES].display }}<span class="text-xs text-gray-400">/mo</span></p>
           </div>
           
           <div class="bg-blue-50 p-4 rounded-xl border border-blue-100 flex items-start space-x-3">

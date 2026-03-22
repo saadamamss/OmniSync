@@ -50,6 +50,7 @@ onUnmounted(() => window.removeEventListener('scroll', handleScroll));
     <div v-if="isMobileMenuOpen" class="md:hidden absolute top-full left-0 right-0 bg-white border-t p-6 space-y-4 shadow-xl">
       <a href="#features" class="block text-lg font-medium text-gray-600">Features</a>
       <a href="#how-it-works" class="block text-lg font-medium text-gray-600">How it works</a>
+      <a href="#pricing" class="block text-lg font-medium text-gray-600">Pricing</a>
       <router-link to="/login" class="block text-lg font-medium text-gray-600">Login</router-link>
       <router-link to="/register" class="block bg-orange-500 text-white text-center py-3 rounded-xl font-bold">Get Started</router-link>
     </div>
