@@ -17,6 +17,19 @@ serve(async (req) => {
     const { data: bot } = await supabase.from('chatbots').select('*').eq('id', bot_id).single()
     if (!bot) throw new Error("Bot not found");
 
+    // Check if bot is active
+    if (bot.is_active === false) {
+      return new Response(
+        JSON.stringify({
+          reply: "This chatbot is currently inactive. Please contact the website owner."
+        }),
+        {
+          status: 200, // 200 not error so it doesn't break the widget
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+        }
+      );
+    }
+
     const groqKey = Deno.env.get('GROQ_API_KEY');
     const openAiKey = Deno.env.get('OPENAI_API_KEY');
     

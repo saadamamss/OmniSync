@@ -25,6 +25,12 @@ const showPaymentModal = ref(false);
 const selectedPlanToUpgrade = ref('');
 const user = ref<any>(null);
 
+// Bot selection modal state for downgrade
+const showBotSelectionModal = ref(false);
+const userBots = ref<any[]>([]);
+const selectedBotsToKeep = ref<string[]>([]);
+const pendingDowngradePlan = ref('');
+
 // Plan pricing configuration
 const PLAN_PRICES = {
   starter: { monthly: 0, yearly: 0, display: 'Free' },
@@ -108,9 +114,29 @@ const openUpgradeModal = (plan: string) => {
 };
 
 const handleDowngrade = async (newPlan: string) => {
+  // Fetch user's bots
+  const { data: bots } = await supabase
+    .from('chatbots')
+    .select('*')
+    .eq('user_id', user.value.id)
+    .eq('is_active', true);
+  
+  const limits: Record<string, number> = { starter: 1, pro: 5, enterprise: 1000 };
+  const limit = limits[newPlan];
+  
+  if (bots && bots.length > limit) {
+    // Show bot selection modal
+    userBots.value = bots;
+    selectedBotsToKeep.value = bots.slice(0, limit).map(b => b.id);
+    pendingDowngradePlan.value = newPlan;
+    showBotSelectionModal.value = true;
+    return;
+  }
+  
+  // Proceed with normal downgrade if under limit
   const confirmed = await askConfirm(
     `Downgrade to ${newPlan.toUpperCase()}?`,
-    `Are you sure you want to switch to the ${newPlan} plan? If you have more bots than allowed in this plan, you won't be able to create new ones.`
+    `Are you sure you want to switch to the ${newPlan} plan?`
   );
 
   if (!confirmed) return;
@@ -127,6 +153,49 @@ const handleDowngrade = async (newPlan: string) => {
     profile.value.plan = newPlan;
     showToast(`Successfully downgraded to ${newPlan} plan`, 'success');
   }
+  saving.value = false;
+};
+
+const confirmBotSelection = async () => {
+  const confirmed = await askConfirm(
+    `Downgrade to ${pendingDowngradePlan.value.toUpperCase()}?`,
+    `Are you sure you want to switch to the ${pendingDowngradePlan.value} plan and keep only ${selectedBotsToKeep.value.length} active bot(s)?`
+  );
+
+  if (!confirmed) return;
+
+  saving.value = true;
+  
+  // Deactivate unselected bots
+  const botsToDeactivate = userBots.value
+    .filter(bot => !selectedBotsToKeep.value.includes(bot.id))
+    .map(bot => bot.id);
+  
+  if (botsToDeactivate.length > 0) {
+    await supabase
+      .from('chatbots')
+      .update({ is_active: false })
+      .eq('user_id', user.value.id)
+      .in('id', botsToDeactivate);
+  }
+  
+  // Update plan
+  const { error } = await supabase
+    .from('profiles')
+    .update({ plan: pendingDowngradePlan.value })
+    .eq('id', user.value.id);
+
+  if (error) {
+    showToast(error.message, 'error');
+  } else {
+    profile.value.plan = pendingDowngradePlan.value;
+    showToast(`Successfully downgraded to ${pendingDowngradePlan.value} plan`, 'success');
+  }
+  
+  showBotSelectionModal.value = false;
+  selectedBotsToKeep.value = [];
+  userBots.value = [];
+  pendingDowngradePlan.value = '';
   saving.value = false;
 };
 
@@ -315,6 +384,58 @@ onMounted(fetchProfile);
           <button @click="processPayment" :disabled="upgrading" class="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold hover:bg-gray-800 transition-all flex items-center justify-center shadow-lg">
             <Loader2 v-if="upgrading" class="w-5 h-5 mr-2 animate-spin" />
             <span v-else>Proceed to Checkout</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bot Selection Modal -->
+    <div v-if="showBotSelectionModal" class="fixed inset-0 z-[100] flex items-center justify-center p-4">
+      <div class="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" @click="showBotSelectionModal = false"></div>
+      <div class="bg-white w-full max-w-lg rounded-[2.5rem] shadow-2xl relative z-10 overflow-hidden">
+        <div class="p-8 border-b border-gray-50 flex items-center justify-between">
+          <h3 class="text-xl font-bold">Select Bots to Keep Active</h3>
+          <button @click="showBotSelectionModal = false" class="text-gray-400 hover:text-gray-600"><X class="w-6 h-6" /></button>
+        </div>
+        <div class="p-8 space-y-6">
+          <div class="bg-orange-50 p-4 rounded-xl border border-orange-100">
+            <p class="text-sm text-orange-800">
+              You're downgrading to <strong>{{ pendingDowngradePlan }}</strong> which allows <strong>{{ pendingDowngradePlan === 'starter' ? '1' : pendingDowngradePlan === 'pro' ? '5' : 'unlimited' }}</strong> active bot(s). Please choose which bots to keep active.
+            </p>
+          </div>
+          
+          <div class="space-y-3 max-h-64 overflow-y-auto">
+            <div v-for="bot in userBots" :key="bot.id" class="flex items-center space-x-3 p-3 rounded-xl border border-gray-200 hover:bg-gray-50">
+              <input 
+                type="checkbox" 
+                :id="bot.id" 
+                v-model="selectedBotsToKeep" 
+                :value="bot.id"
+                class="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
+              />
+              <label :for="bot.id" class="flex-1 cursor-pointer">
+                <p class="font-medium text-gray-900">{{ bot.name }}</p>
+                <p class="text-xs text-gray-500">{{ bot.industry || 'No industry' }}</p>
+              </label>
+            </div>
+          </div>
+
+          <div class="bg-gray-50 p-4 rounded-xl">
+            <p class="text-sm text-gray-600">
+              <strong>{{ selectedBotsToKeep.length }}</strong> of {{ userBots.length }} bots selected
+              <span v-if="selectedBotsToKeep.length > (pendingDowngradePlan === 'starter' ? 1 : pendingDowngradePlan === 'pro' ? 5 : 1000)" class="text-red-600 ml-2">
+                (Please select only {{ pendingDowngradePlan === 'starter' ? '1' : pendingDowngradePlan === 'pro' ? '5' : 'unlimited' }})
+              </span>
+            </p>
+          </div>
+
+          <button 
+            @click="confirmBotSelection" 
+            :disabled="saving || selectedBotsToKeep.length > (pendingDowngradePlan === 'starter' ? 1 : pendingDowngradePlan === 'pro' ? 5 : 1000)" 
+            class="w-full bg-gray-900 text-white py-4 rounded-2xl font-bold hover:bg-gray-800 transition-all flex items-center justify-center shadow-lg disabled:opacity-50"
+          >
+            <Loader2 v-if="saving" class="w-5 h-5 mr-2 animate-spin" />
+            <span v-else>Confirm Downgrade</span>
           </button>
         </div>
       </div>

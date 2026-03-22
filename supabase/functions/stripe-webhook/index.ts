@@ -72,6 +72,9 @@ serve(async (req) => {
         console.warn("[stripe-webhook] Warning: No profile found to update for ID:", userId);
       } else {
         console.log(`[stripe-webhook] SUCCESS: User ${userId} plan updated to ${plan}`);
+        
+        // User will manually activate bots from Dashboard
+        console.log(`[stripe-webhook] User ${userId} can now manually activate bots up to plan ${plan} limit`);
       }
     }
 

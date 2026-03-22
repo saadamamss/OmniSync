@@ -13,7 +13,8 @@ import {
   ExternalLink,
   AlertTriangle,
   ArrowUpCircle,
-  PauseCircle
+  PauseCircle,
+  Zap
 } from 'lucide-vue-next';
 
 const { askConfirm, showToast } = useNotification();
@@ -56,9 +57,8 @@ const filteredBots = computed(() => {
   );
 });
 
-const getBotStatus = (index: number) => {
-  const limit = PLAN_LIMITS[userPlan.value];
-  return index < limit ? 'active' : 'paused';
+const getBotStatus = (bot: any) => {
+  return bot.is_active ? 'active' : 'paused';
 };
 
 const deleteBot = async (id: string) => {
@@ -76,6 +76,27 @@ const deleteBot = async (id: string) => {
     showToast('Chatbot deleted successfully', 'success');
   } else {
     showToast(error.message, 'error');
+  }
+};
+
+const activateBot = async (bot: any) => {
+  const limits: Record<string, number> = { starter: 1, pro: 5, enterprise: 1000 };
+  const limit = limits[userPlan.value];
+  const activeCount = bots.value.filter(b => b.is_active).length;
+  
+  if (activeCount >= limit) {
+    showToast(`You've reached your plan limit (${limit} bots). Deactivate another bot first.`, 'error');
+    return;
+  }
+
+  const { error } = await supabase
+    .from('chatbots')
+    .update({ is_active: true })
+    .eq('id', bot.id);
+
+  if (!error) {
+    bot.is_active = true;
+    showToast(`"${bot.name}" is now active!`, 'success');
   }
 };
 
@@ -127,11 +148,11 @@ onMounted(fetchBots);
       <div v-else-if="filteredBots.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <div v-for="(bot, index) in filteredBots" :key="bot.id" 
           class="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm hover:shadow-md transition-all group relative overflow-hidden"
-          :class="{ 'opacity-75 grayscale-[0.5]': getBotStatus(index) === 'paused' }">
+          :class="{ 'opacity-75 grayscale-[0.5]': getBotStatus(bot) === 'paused' }">
           
           <div class="flex items-start justify-between mb-6 relative z-10">
-            <div :class="['p-3 rounded-2xl', getBotStatus(index) === 'active' ? 'bg-orange-50 text-orange-600' : 'bg-gray-100 text-gray-400']">
-              <MessageSquare v-if="getBotStatus(index) === 'active'" class="w-6 h-6" />
+            <div :class="['p-3 rounded-2xl', getBotStatus(bot) === 'active' ? 'bg-orange-50 text-orange-600' : 'bg-gray-100 text-gray-400']">
+              <MessageSquare v-if="getBotStatus(bot) === 'active'" class="w-6 h-6" />
               <PauseCircle v-else class="w-6 h-6" />
             </div>
             <div class="flex space-x-1">
@@ -147,12 +168,23 @@ onMounted(fetchBots);
           <h3 class="text-xl font-bold text-gray-900 mb-2 relative z-10">{{ bot.name }}</h3>
           
           <div class="flex items-center space-x-2 mb-6 relative z-10">
-            <span v-if="getBotStatus(index) === 'active'" class="text-xs px-2.5 py-1 rounded-full font-bold bg-green-50 text-green-600">Active</span>
+            <span v-if="getBotStatus(bot) === 'active'" class="text-xs px-2.5 py-1 rounded-full font-bold bg-green-50 text-green-600">Active</span>
             <span v-else class="text-xs px-2.5 py-1 rounded-full font-bold bg-orange-100 text-orange-700">Paused (Over Limit)</span>
             <span class="text-xs text-gray-400 capitalize">{{ bot.settings?.source_type }} source</span>
           </div>
 
-          <div class="pt-6 border-t border-gray-50 flex items-center justify-between relative z-10">
+          <div v-if="getBotStatus(bot) === 'paused'" class="pt-6 border-t border-gray-50 flex items-center justify-between relative z-10">
+            <!-- Activate button -->
+            <button
+              @click="activateBot(bot)"
+              class="text-sm font-bold text-green-600 flex items-center hover:underline"
+            >
+              <Zap class="w-4 h-4 mr-1" /> Activate
+            </button>
+            <span class="text-xs text-gray-400">Paused</span>
+          </div>
+          
+          <div v-else class="pt-6 border-t border-gray-50 flex items-center justify-between relative z-10">
             <router-link :to="`/dashboard/bots/${bot.id}`" class="text-sm font-bold text-gray-900 flex items-center hover:text-orange-600 transition-colors">
               Manage <ExternalLink class="w-4 h-4 ml-1.5" />
             </router-link>

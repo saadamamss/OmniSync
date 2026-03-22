@@ -161,3 +161,47 @@ as $$
   order by similarity desc
   limit match_count;
 $$;
+
+-- Add is_active column to chatbots table
+alter table chatbots add column if not exists is_active boolean not null default true;
+
+-- Function to enforce plan bot limits
+create or replace function enforce_plan_bot_limits(
+  p_user_id uuid,
+  p_plan text
+)
+returns void as $$
+declare
+  v_limit integer;
+begin
+  -- Set limit based on plan
+  v_limit := case p_plan
+    when 'starter'    then 1
+    when 'pro'        then 5
+    when 'enterprise' then 1000
+    else 1
+  end;
+
+  -- Disable excess bots (newest first)
+  update chatbots
+  set is_active = false
+  where user_id = p_user_id
+    and id not in (
+      select id from chatbots
+      where user_id = p_user_id
+      order by created_at asc  -- Oldest stays active
+      limit v_limit
+    );
+
+  -- Enable bots within limit
+  update chatbots
+  set is_active = true
+  where user_id = p_user_id
+    and id in (
+      select id from chatbots
+      where user_id = p_user_id
+      order by created_at asc
+      limit v_limit
+    );
+end;
+$$ language plpgsql security definer;
