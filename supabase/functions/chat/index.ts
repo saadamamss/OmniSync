@@ -68,10 +68,11 @@ serve(async (req) => {
       );
     }
 
-    // Increment count
-    await supabase.rpc('increment_message_usage', { p_user_id: botOwner.user_id });
+    // NOTE: usage is incremented only after a successful AI reply below —
+    // billing before the answer let any visitor drain an owner's quota for free.
 
     const groqKey = Deno.env.get('GROQ_API_KEY');
+    if (!groqKey) throw new Error("GROQ_API_KEY not configured in Supabase secrets");
     const openAiKey = Deno.env.get('OPENAI_API_KEY');
     
     let contextChunks: string[] = [];
@@ -153,7 +154,13 @@ serve(async (req) => {
     });
 
     const result = await aiRes.json();
-    const reply = result.choices[0].message.content;
+    const reply = result.choices?.[0]?.message?.content;
+    if (!reply) {
+      throw new Error(`AI failed with ${aiRes.status}: ${JSON.stringify(result.error ?? result).slice(0, 300)}`);
+    }
+
+    // Bill the owner only for successful replies.
+    await supabase.rpc('increment_message_usage', { p_user_id: botOwner.user_id });
 
     if (conversation_id) {
       await supabase.from('messages').insert([

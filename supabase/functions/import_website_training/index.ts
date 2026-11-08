@@ -25,10 +25,16 @@ Deno.serve(async (req) => {
 
     const crawlResponse = await fetch(`${vercelUrl}/api/crawl`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-crawl-secret": Deno.env.get("CRAWL_SECRET") ?? "",
+      },
       body: JSON.stringify({ website_url }),
     });
 
+    if (crawlResponse.status === 401) {
+      throw new Error("Crawler rejected the request: set CRAWL_SECRET (same value) in Supabase and Vercel");
+    }
     if (!crawlResponse.ok) {
       throw new Error(`Crawler failed: ${crawlResponse.statusText}`);
     }
