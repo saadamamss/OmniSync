@@ -56,3 +56,13 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`[crawl] local server ready → http://127.0.0.1:${PORT}/api/crawl (CRAWL_SECRET=${SECRET === "local-dev-secret" ? "default dev secret" : "custom"})`);
 });
+
+server.on("error", (err) => {
+  if (err?.code === "EADDRINUSE") {
+    // Probably already running (manual start or an existing dev session) —
+    // the vite proxy will hit that instance instead. Exit quietly.
+    console.log(`[crawl] port ${PORT} already serving → reusing it`);
+    process.exit(0);
+  }
+  throw err;
+});
