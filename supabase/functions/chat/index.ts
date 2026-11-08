@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
+import { generateEmbedding } from '../_shared/embeddings.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -78,22 +79,15 @@ serve(async (req) => {
     // 2. البحث الذكي (Vector Search) - إذا توفرت المفاتيح
     if (openAiKey) {
       try {
-        const embRes = await fetch("https://api.openai.com/v1/embeddings", {
-          method: "POST",
-          headers: { "Authorization": `Bearer ${openAiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ input: message, model: "text-embedding-3-small" }),
+        const queryEmbedding = await generateEmbedding(message, openAiKey);
+        const { data: vectorResults } = await supabase.rpc('match_knowledge_chunks', {
+          query_embedding: queryEmbedding,
+          match_threshold: 0.1, // عتبة منخفضة جداً لضمان إيجاد أي شيء قريب
+          match_count: 5,
+          p_chatbot_id: bot_id
         });
-        if (embRes.ok) {
-          const embData = await embRes.json();
-          const { data: vectorResults } = await supabase.rpc('match_knowledge_chunks', {
-            query_embedding: embData.data[0].embedding,
-            match_threshold: 0.1, // عتبة منخفضة جداً لضمان إيجاد أي شيء قريب
-            match_count: 5,
-            p_chatbot_id: bot_id
-          });
-          if (vectorResults && vectorResults.length > 0) {
-            contextChunks = vectorResults.map((c: any) => c.content);
-          }
+        if (vectorResults && vectorResults.length > 0) {
+          contextChunks = vectorResults.map((c: any) => c.content);
         }
       } catch (e) { console.error("[chat] Vector search failed:", e.message); }
     }
