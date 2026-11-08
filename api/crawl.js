@@ -160,7 +160,9 @@ export default async function handler(req, res) {
     const $ = cheerio.load(body);
 
     // Drop script/style/nav noise before extracting text
-    $("script, style, noscript, svg, iframe").remove();
+    // Header/nav/footer/aside are identical on every stored page — leaving
+    // them in made every chunk look like the same data repeated.
+    $("script, style, noscript, svg, iframe, header, nav, footer, aside, form, [role='banner'], [role='navigation'], [role='contentinfo']").remove();
 
     const text = $("body").text().replace(/\s+/g, " ").trim();
 
@@ -207,7 +209,7 @@ export default async function handler(req, res) {
   }
 }
 
-function splitText(text, chunkSize = 1000, overlap = 200) {
+function splitText(text, chunkSize = 1000, overlap = 50) {
   const paragraphs = text
     .split(/\n\s*\n/)
     .map((p) => p.trim().replace(/\s+/g, " "))
@@ -232,10 +234,21 @@ function splitText(text, chunkSize = 1000, overlap = 200) {
       chunks.push(current);
       current = current.slice(Math.max(0, current.length - overlap));
       current = current ? `${current} ${paragraph}` : paragraph;
-    } else {
+    }
+    else {
       current = current ? `${current} ${paragraph}` : paragraph;
     }
   }
   if (current) chunks.push(current);
-  return chunks;
+
+  // Drop boilerplate duplicates: normalize each chunk and keep first-seen only.
+  // The old pipeline stored near-identical chunks (nav/footer + overlap), which
+  // made retrieval return "the same answer" many times in a row.
+  const seen = new Set();
+  return chunks.filter((chunk) => {
+    const key = chunk.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().slice(0, 120);
+    if (chunk.length < 30 || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
