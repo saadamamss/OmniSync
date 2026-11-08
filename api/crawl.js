@@ -1,6 +1,39 @@
-import { CheerioWebBaseLoader } from "langchain/document_loaders/web/cheerio";
-import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
-import { OpenAIEmbeddings } from "langchain/embeddings/openai";
+import * as cheerio from "cheerio";
+
+// Matches the old RecursiveCharacterTextSplitter behavior closely enough
+// for training: pack paragraphs into ~1000-char chunks with ~200 overlap.
+function splitText(text, chunkSize = 1000, overlap = 200) {
+  const paragraphs = text
+    .split(/\n\s*\n/)
+    .map((p) => p.trim().replace(/\s+/g, " "))
+    .filter(Boolean);
+
+  const chunks = [];
+  let current = "";
+
+  for (const paragraph of paragraphs) {
+    if (paragraph.length > chunkSize) {
+      // Long paragraph: flush what we have, then cut it into fixed slices.
+      if (current) {
+        chunks.push(current);
+        current = "";
+      }
+      for (let i = 0; i < paragraph.length; i += chunkSize - overlap) {
+        chunks.push(paragraph.slice(i, i + chunkSize));
+      }
+      continue;
+    }
+    if (current.length + paragraph.length + 1 > chunkSize) {
+      chunks.push(current);
+      current = current.slice(Math.max(0, current.length - overlap));
+      current = current ? `${current} ${paragraph}` : paragraph;
+    } else {
+      current = current ? `${current} ${paragraph}` : paragraph;
+    }
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
 
 export default async function handler(req, res) {
   // CORS headers
@@ -23,16 +56,43 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "website_url is required" });
     }
 
+    // Basic sanity: only http(s), no local/private addresses (best-effort SSRF guard).
+    let targetUrl;
+    try {
+      targetUrl = new URL(website_url);
+    } catch {
+      return res.status(400).json({ error: "website_url must be a valid absolute URL" });
+    }
+    if (!/^https?:$/.test(targetUrl.protocol)) {
+      return res.status(400).json({ error: "website_url must start with http:// or https://" });
+    }
+
     console.log(`Starting crawl for: ${website_url}`);
 
-    // Load the website content
-    const loader = new CheerioWebBaseLoader(website_url, {
-      selector: "body",
+    const response = await fetch(targetUrl, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; OmniSyncBot/1.0)" },
+      signal: AbortSignal.timeout(30_000),
     });
-    
-    const docs = await loader.load();
-    
-    if (!docs || docs.length === 0) {
+
+    if (!response.ok) {
+      return res.json({
+        success: false,
+        status: "failed",
+        message: `Website returned HTTP ${response.status}`,
+        pages_scanned: 0,
+        chunks_created: 0,
+      });
+    }
+
+    const html = await response.text();
+    const $ = cheerio.load(html);
+
+    // Drop script/style/nav noise before extracting text
+    $("script, style, noscript, svg, iframe").remove();
+
+    const text = $("body").text().replace(/\s+/g, " ").trim();
+
+    if (!text) {
       return res.json({
         success: false,
         status: "failed",
@@ -42,43 +102,13 @@ export default async function handler(req, res) {
       });
     }
 
-    // Split content into chunks
-    const textSplitter = new RecursiveCharacterTextSplitter({
-      chunkSize: 1000,
-      chunkOverlap: 200,
-    });
-
-    const chunks = await textSplitter.splitDocuments(docs);
-    
-    // Format chunks for response
-    const formattedChunks = chunks.map((chunk, index) => ({
+    const split = splitText(text);
+    const formattedChunks = split.map((chunk, index) => ({
       id: `chunk_${index}`,
       title: `Content chunk ${index + 1}`,
-      content: chunk.pageContent,
-      metadata: chunk.metadata,
+      content: chunk,
+      metadata: { source: targetUrl.href },
     }));
-
-    // Generate embeddings if OpenAI key is available
-    const openAiKey = process.env.OPENAI_API_KEY;
-    if (openAiKey) {
-      try {
-        const embeddings = new OpenAIEmbeddings({
-          openAIApiKey: openAiKey,
-        });
-
-        for (const chunk of formattedChunks) {
-          try {
-            const embedding = await embeddings.embedQuery(chunk.content);
-            chunk.embedding = embedding;
-          } catch (err) {
-            console.error(`Failed to generate embedding for chunk ${chunk.id}:`, err);
-            chunk.embedding = null;
-          }
-        }
-      } catch (err) {
-        console.error("Failed to initialize OpenAI embeddings:", err);
-      }
-    }
 
     console.log(`Successfully processed ${formattedChunks.length} chunks`);
 
@@ -90,7 +120,6 @@ export default async function handler(req, res) {
       chunks_created: formattedChunks.length,
       chunks: formattedChunks,
     });
-
   } catch (error) {
     console.error("Crawl error:", error);
     return res.status(500).json({
