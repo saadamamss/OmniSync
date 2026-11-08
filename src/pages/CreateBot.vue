@@ -16,6 +16,10 @@ import {
   Sparkles
 } from 'lucide-vue-next';
 import { useNotification } from '@/composables/useNotification';
+import * as pdfjsLib from 'pdfjs-dist';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 
 const router = useRouter();
 const { showToast } = useNotification();
@@ -23,6 +27,8 @@ const step = ref(1);
 const botName = ref('');
 const sourceType = ref('website');
 const sourceValue = ref('');
+const pdfFileName = ref('');
+const isExtractingPdf = ref(false);
 const loading = ref(false);
 const checkingPlan = ref(true);
 const planLimitReached = ref(false);
@@ -79,12 +85,27 @@ const handleFileUpload = async (event: Event) => {
   const target = event.target as HTMLInputElement;
   const file = target.files?.[0];
   if (!file) return;
-  
+
   if (file.type === 'application/pdf') {
-    // For PDF files, we'll store the file reference and process it differently
-    sourceValue.value = file.name; // Store filename as reference
+    isExtractingPdf.value = true;
+    try {
+      const text = await extractPdfText(file);
+      if (text.trim().length < 30) {
+        showToast('This PDF appears to be scanned images with no selectable text — extraction is not possible.', 'warning');
+      } else {
+        sourceValue.value = text;
+        pdfFileName.value = file.name;
+        showToast(`Extracted ${Math.round(text.length / 1000)}k characters from PDF.`, 'success');
+      }
+    } catch (e: any) {
+      console.error('PDF extraction failed:', e);
+      showToast('Could not read PDF: ' + e.message, 'error');
+    } finally {
+      isExtractingPdf.value = false;
+    }
   } else {
     // For text files, read content as before
+    pdfFileName.value = file.name;
     const reader = new FileReader();
     reader.onload = (e) => {
       sourceValue.value = e.target?.result as string;
@@ -92,6 +113,27 @@ const handleFileUpload = async (event: Event) => {
     reader.readAsText(file);
   }
   target.value = '';
+};
+
+// Real client-side PDF text extraction (Mozilla PDF.js).
+// Extracted text flows into the same chunkText() pipeline as pasted text —
+// no fake "PDF uploaded" placeholder chunks.
+const extractPdfText = async (file: File): Promise<string> => {
+  const data = new Uint8Array(await file.arrayBuffer());
+  const doc = await pdfjsLib.getDocument({ data }).promise;
+  const pages: string[] = [];
+  for (let i = 1; i <= doc.numPages; i++) {
+    const page = await doc.getPage(i);
+    const content = await page.getTextContent();
+    pages.push(
+      content.items
+        .map((item: any) => item.str)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+    );
+  }
+  return pages.filter(Boolean).join('\n\n');
 };
 
 const handleCreate = async () => {
@@ -149,15 +191,19 @@ const handleCreate = async () => {
       router.push('/dashboard/bots');
     }
   } else if (sourceType.value === 'pdf') {
-    // For PDF, we'll store the filename and process it later
-    // In a real implementation, you'd upload the PDF to storage and process it
+    if (!sourceValue.value.trim()) {
+      showToast('No text could be extracted from the PDF — pick a text-based PDF or paste the content manually.', 'error');
+      loading.value = false;
+      return;
+    }
+    const chunks = chunkText(sourceValue.value);
     await supabase
       .from('knowledge_chunks')
-      .insert([{
+      .insert(chunks.map(content => ({
         chatbot_id: bot.id,
-        content: `PDF uploaded: ${sourceValue.value}`,
-        title: 'PDF Document'
-      }]);
+        content,
+        title: `PDF: ${pdfFileName.value}`
+      })));
     router.push('/dashboard/bots');
   } else {
     if (sourceValue.value.trim()) {
@@ -286,25 +332,32 @@ onMounted(checkPlanLimits);
               <div v-if="sourceType === 'pdf'" class="space-y-4">
                 <label class="block text-sm font-medium text-gray-700">PDF File</label>
                 <div class="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-gray-300 transition-colors">
-                  <input 
+                  <input
                     ref="fileInput"
-                    type="file" 
+                    type="file"
                     accept=".pdf"
                     @change="handleFileUpload"
-                    class="hidden" 
+                    class="hidden"
                   />
-                  <Upload class="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                  <p class="text-sm text-gray-600 mb-2">Click to upload PDF file</p>
-                  <button 
+                  <Loader2 v-if="isExtractingPdf" class="w-8 h-8 text-orange-500 mx-auto mb-2 animate-spin" />
+                  <Upload v-else class="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                  <p class="text-sm text-gray-600 mb-2">
+                    {{ isExtractingPdf ? 'Extracting text from PDF...' : 'Click to upload PDF file' }}
+                  </p>
+                  <button
                     type="button"
+                    :disabled="isExtractingPdf"
                     @click="fileInput?.click()"
-                    class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm"
+                    class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm disabled:opacity-50"
                   >
                     Choose File
                   </button>
                 </div>
                 <div v-if="sourceValue" class="mt-2 p-3 bg-gray-50 rounded-lg">
-                  <p class="text-sm text-gray-600">PDF loaded and ready for processing</p>
+                  <p class="text-sm text-gray-600">
+                    <CheckCircle2 class="w-4 h-4 inline text-green-500 mr-1" />
+                    <strong>{{ pdfFileName }}</strong> — extracted {{ sourceValue.length.toLocaleString() }} characters, ready to index.
+                  </p>
                 </div>
               </div>
               <div v-if="sourceType === 'text'" class="space-y-4">
