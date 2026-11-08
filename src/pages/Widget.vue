@@ -15,16 +15,28 @@ const chatContainer = ref<HTMLElement | null>(null);
 
 const showLeadForm = ref(false);
 const leadData = ref({ name: '', email: '' });
+const notFound = ref(false);
 
 const fetchBot = async () => {
   const botId = route.query.id as string;
-  if (!botId) return;
+  if (!botId) {
+    notFound.value = true;
+    return;
+  }
 
-  const { data } = await supabase.from("chatbots").select("*").eq("id", botId).single();
+  // Public (anonymous) access — the RLS policy "Public can view active bots"
+  // limits rows to active bots; we limit columns to what the widget needs.
+  const { data } = await supabase
+    .from("chatbots")
+    .select("id, name, settings, is_active")
+    .eq("id", botId)
+    .single();
   if (data) {
     bot.value = data;
     chatHistory.value = [{ role: "assistant", content: data.settings.appearance.welcomeMessage }];
     if (data.settings.appearance.collectLeads) showLeadForm.value = true;
+  } else {
+    notFound.value = true;
   }
 };
 
@@ -163,5 +175,10 @@ onMounted(fetchBot);
     <button @click="isOpen = !isOpen" class="w-12 h-12 rounded-full shadow-2xl flex items-center justify-center text-white transition-all hover:scale-110 active:scale-95 pointer-events-auto" :class="{ 'opacity-0 !w-0 !h-0 overflow-hidden': isOpen }" :style="{ backgroundColor: bot.settings.appearance.primaryColor }">
       <MessageSquare class="w-7 h-7" />
     </button>
+  </div>
+
+  <!-- Bot unavailable (missing id, deleted, or inactive) -->
+  <div v-else-if="notFound" class="fixed bottom-4 right-4 p-3 bg-white rounded-xl shadow-lg border border-gray-200 text-xs text-gray-400 font-sans">
+    Chat is unavailable
   </div>
 </template>

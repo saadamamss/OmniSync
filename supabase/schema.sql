@@ -96,6 +96,14 @@ drop policy if exists "Users can CRUD own chatbots" on chatbots;
 create policy "Users can CRUD own chatbots"
   on chatbots for all using (auth.uid() = user_id);
 
+-- Widget needs to read bot config as an anonymous visitor.
+-- Exposure is intentionally narrowed: only ACTIVE bots, and the widget
+-- queries select specific columns (id, name, is_active, settings) — never *.
+drop policy if exists "Public can view active bots (widget)" on chatbots;
+create policy "Public can view active bots (widget)"
+  on chatbots for select
+  using (is_active = true);
+
 -- knowledge_chunks
 drop policy if exists "Users can CRUD chunks of own bots" on knowledge_chunks;
 create policy "Users can CRUD chunks of own bots"
