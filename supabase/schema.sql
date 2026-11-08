@@ -89,7 +89,14 @@ create policy "Users can view own profile"
 
 drop policy if exists "Users can update own profile" on profiles;
 create policy "Users can update own profile"
-  on profiles for update using (auth.uid() = id);
+  on profiles for update using (auth.uid() = id) with check (auth.uid() = id);
+
+-- INSERT is allowed for the db trigger on signup (security definer) and is
+-- required so Settings.vue's upsert() works. with check keeps users from
+-- creating write-overs for someone else's id.
+drop policy if exists "Users can insert own profile" on profiles;
+create policy "Users can insert own profile"
+  on profiles for insert with check (auth.uid() = id);
 
 -- chatbots
 drop policy if exists "Users can CRUD own chatbots" on chatbots;
@@ -122,7 +129,11 @@ create policy "Users can view own bot conversations"
 
 drop policy if exists "Anyone can create conversations (widget)" on conversations;
 create policy "Anyone can create conversations (widget)"
-  on conversations for insert with check (true);
+  on conversations for insert
+  with check (exists (
+    select 1 from chatbots b
+    where b.id = chatbot_id and b.is_active
+  ));
 
 drop policy if exists "Users can delete own conversations" on conversations;
 create policy "Users can delete own conversations"
@@ -141,9 +152,12 @@ create policy "Users can view messages of own bots"
     where b.user_id = auth.uid()
   ));
 
+-- messages are only written by the chat Edge Function using the service-role
+-- client, which bypasses RLS. The old "Anyone can insert messages" policy is
+-- deliberately NOT re-created (it let any visitor spam rows into any
+-- conversation). Kept as an explicit drop so rerunning this file removes it
+-- from databases that created it with an older version of the schema.
 drop policy if exists "Anyone can insert messages (widget + chat function)" on messages;
-create policy "Anyone can insert messages (widget + chat function)"
-  on messages for insert with check (true);
 
 -- match_knowledge_chunks function
 drop function if exists match_knowledge_chunks(vector, float, int, uuid);
@@ -216,6 +230,30 @@ begin
     );
 end;
 $$ language plpgsql security definer;
+
+-- [H4] Wire enforce_plan_bot_limits() so the plan cap is enforced by the
+-- database, not just the frontend. Runs when a chatbot is created and when
+-- a plan changes (manual upgrade or Stripe webhook downgrade).
+create or replace function public.apply_plan_bot_limits()
+returns trigger as $$
+declare
+  v_plan text;
+begin
+  select plan into v_plan from profiles where id = NEW.user_id;
+  perform enforce_plan_bot_limits(NEW.user_id, coalesce(v_plan, 'starter'));
+  return null;
+end;
+$$ language plpgsql security definer;
+
+drop trigger if exists trg_apply_plan_bot_limits_on_insert on chatbots;
+create trigger trg_apply_plan_bot_limits_on_insert
+  after insert on chatbots
+  for each row execute function public.apply_plan_bot_limits();
+
+drop trigger if exists trg_apply_plan_bot_limits_on_plan_change on profiles;
+create trigger trg_apply_plan_bot_limits_on_plan_change
+  after update of plan on profiles
+  for each row execute function public.apply_plan_bot_limits();
 
 -- 6. message_usage table
 create table if not exists message_usage (
