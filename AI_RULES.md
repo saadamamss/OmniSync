@@ -6,7 +6,7 @@
 - **Tailwind CSS**: The primary utility-first CSS framework for all styling and responsive design.
 - **Lucide Vue Next**: The default icon library for all UI icons.
 - **Vue Router**: Used for handling client-side navigation and routing.
-- **@vueuse/motion**: Preferred for animations and transitions (replacing legacy AOS).
+- **@vueuse/motion**: Preferred for animations and transitions (AOS is fully removed; the landing page uses v-motion presets).
 
 ## Coding Rules
 - **Component Structure**: Every new component must be created in its own file within `src/components/` using the `<script setup>` syntax.

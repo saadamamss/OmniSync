@@ -9,20 +9,16 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@popperjs/core": "^2.11.8",
     "@stripe/stripe-js": "^8.9.0",
     "@supabase/supabase-js": "^2.98.0",
     "@vueuse/motion": "^2.2.6",
-    "aos": "^2.3.4",
     "cheerio": "^1.2.0",
-    "jquery": "^4.0.0",
     "lucide-vue-next": "^0.454.0",
     "pdfjs-dist": "^6.5.438",
     "vue": "^3.5.12",
     "vue-router": "^4.4.5"
   },
   "devDependencies": {
-    "@types/aos": "^3.0.7",
     "@types/node": "^25.3.5",
     "@vitejs/plugin-vue": "^5.1.4",
     "autoprefixer": "^10.4.20",

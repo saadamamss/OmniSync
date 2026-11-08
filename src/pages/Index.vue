@@ -2,6 +2,24 @@
 import { Zap, Shield, BarChart3, Globe, ArrowRight, CheckCircle2, Star, Plus, Minus } from 'lucide-vue-next';
 import { ref } from 'vue';
 
+// Animation presets for @vueuse/motion (replaces legacy AOS, per AI_RULES.md).
+const fadeUp = (delay = 0) => ({
+  initial: { opacity: 0, y: 24 },
+  visibleOnce: { opacity: 1, y: 0, transition: { duration: 800, delay, ease: 'easeInOut' } },
+});
+const fadeRight = (delay = 0) => ({
+  initial: { opacity: 0, x: 40 },
+  visibleOnce: { opacity: 1, x: 0, transition: { duration: 800, delay, ease: 'easeInOut' } },
+});
+const zoomInUp = (delay = 0) => ({
+  initial: { opacity: 0, y: 40, scale: 0.95 },
+  visibleOnce: { opacity: 1, y: 0, scale: 1, transition: { duration: 800, delay, ease: 'easeInOut' } },
+});
+const zoomIn = (delay = 0) => ({
+  initial: { opacity: 0, scale: 0.9 },
+  visibleOnce: { opacity: 1, scale: 1, transition: { duration: 800, delay, ease: 'easeInOut' } },
+});
+
 const features = [
   {
     title: 'Instant Training',
@@ -98,7 +116,7 @@ const testimonials = [
     <!-- Hero Section -->
     <section class="relative pt-32 pb-20 lg:pt-48 lg:pb-32 px-6">
       <div class="max-w-7xl mx-auto text-center">
-        <div data-aos="fade-up" class="inline-flex items-center space-x-2 bg-orange-50 text-orange-600 px-4 py-2 rounded-full text-sm font-medium mb-8">
+        <div v-motion :initial="fadeUp().initial" :visible-once="fadeUp().visibleOnce" class="inline-flex items-center space-x-2 bg-orange-50 text-orange-600 px-4 py-2 rounded-full text-sm font-medium mb-8">
           <span class="relative flex h-2 w-2">
             <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
             <span class="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
@@ -106,16 +124,16 @@ const testimonials = [
           <span>New: GPT-4o Integration is live!</span>
         </div>
         
-        <h1 data-aos="fade-up" data-aos-delay="100" class="text-5xl lg:text-7xl font-extrabold text-gray-900 tracking-tight mb-8">
+        <h1 v-motion :initial="fadeUp(100).initial" :visible-once="fadeUp(100).visibleOnce" class="text-5xl lg:text-7xl font-extrabold text-gray-900 tracking-tight mb-8">
           Your Customer Support <br />
           <span class="text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-rose-500">On Autopilot</span>
         </h1>
         
-        <p data-aos="fade-up" data-aos-delay="200" class="max-w-2xl mx-auto text-xl text-gray-600 mb-10 leading-relaxed">
+        <p v-motion :initial="fadeUp(200).initial" :visible-once="fadeUp(200).visibleOnce" class="max-w-2xl mx-auto text-xl text-gray-600 mb-10 leading-relaxed">
           Build a custom AI chatbot that knows your business inside out. Reduce support tickets by 70% and delight your customers 24/7.
         </p>
         
-        <div data-aos="fade-up" data-aos-delay="300" class="flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-4">
+        <div v-motion :initial="fadeUp(300).initial" :visible-once="fadeUp(300).visibleOnce" class="flex flex-col sm:flex-row items-center justify-center space-y-4 sm:space-y-0 sm:space-x-4">
           <router-link to="/register" class="w-full sm:w-auto bg-gray-900 text-white px-8 py-4 rounded-full text-lg font-bold hover:bg-gray-800 transition-all flex items-center justify-center group">
             Start Free Trial
             <ArrowRight class="ml-2 w-5 h-5 group-hover:translate-x-1 transition-transform" />
@@ -126,7 +144,7 @@ const testimonials = [
         </div>
 
         <!-- Hero Image -->
-        <div data-aos="zoom-in-up" data-aos-delay="400" class="mt-20 relative max-w-5xl mx-auto">
+        <div v-motion :initial="zoomInUp(400).initial" :visible-once="zoomInUp(400).visibleOnce" class="mt-20 relative max-w-5xl mx-auto">
           <div class="absolute -inset-1 bg-gradient-to-r from-orange-500 to-rose-500 rounded-2xl blur opacity-20"></div>
           <div class="relative bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden">
             <img src="https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&q=80&w=2426" alt="Dashboard Preview" class="w-full h-auto" />
@@ -139,12 +157,12 @@ const testimonials = [
     <section id="features" class="py-24 bg-gray-50 px-6">
       <div class="max-w-7xl mx-auto">
         <div class="text-center mb-20">
-          <h2 data-aos="fade-up" class="text-3xl lg:text-5xl font-bold text-gray-900 mb-4">Everything you need to scale</h2>
-          <p data-aos="fade-up" data-aos-delay="100" class="text-xl text-gray-600">Powerful tools designed for modern businesses.</p>
+          <h2 v-motion :initial="fadeUp().initial" :visible-once="fadeUp().visibleOnce" class="text-3xl lg:text-5xl font-bold text-gray-900 mb-4">Everything you need to scale</h2>
+          <p v-motion :initial="fadeUp(100).initial" :visible-once="fadeUp(100).visibleOnce" class="text-xl text-gray-600">Powerful tools designed for modern businesses.</p>
         </div>
 
         <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
-          <div v-for="(f, i) in features" :key="i" data-aos="fade-up" :data-aos-delay="i * 100" class="bg-white p-8 rounded-3xl border border-gray-100 hover:shadow-xl transition-all group">
+          <div v-for="(f, i) in features" :key="i" v-motion :initial="fadeUp(i * 100).initial" :visible-once="fadeUp(i * 100).visibleOnce" class="bg-white p-8 rounded-3xl border border-gray-100 hover:shadow-xl transition-all group">
             <div :class="['w-14 h-14 rounded-2xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform', f.color]">
               <component :is="f.icon" class="w-7 h-7" />
             </div>
@@ -159,7 +177,7 @@ const testimonials = [
     <section class="py-24 px-6">
       <div class="max-w-7xl mx-auto">
         <div class="grid md:grid-cols-2 gap-12">
-          <div v-for="(t, i) in testimonials" :key="i" data-aos="fade-right" :data-aos-delay="i * 100" class="bg-white p-10 rounded-[2.5rem] border border-gray-100 shadow-sm">
+          <div v-for="(t, i) in testimonials" :key="i" v-motion :initial="fadeRight(i * 100).initial" :visible-once="fadeRight(i * 100).visibleOnce" class="bg-white p-10 rounded-[2.5rem] border border-gray-100 shadow-sm">
             <div class="flex items-center space-x-1 text-orange-500 mb-6">
               <Star v-for="s in 5" :key="s" class="w-5 h-5 fill-current" />
             </div>
@@ -180,12 +198,12 @@ const testimonials = [
     <section id="pricing" class="py-24 bg-gray-900 px-6">
       <div class="max-w-7xl mx-auto">
         <div class="text-center mb-20">
-          <h2 data-aos="fade-up" class="text-3xl lg:text-5xl font-bold text-white mb-4">Simple, transparent pricing</h2>
-          <p data-aos="fade-up" data-aos-delay="100" class="text-xl text-gray-400">Choose the plan that works best for you.</p>
+          <h2 v-motion :initial="fadeUp().initial" :visible-once="fadeUp().visibleOnce" class="text-3xl lg:text-5xl font-bold text-white mb-4">Simple, transparent pricing</h2>
+          <p v-motion :initial="fadeUp(100).initial" :visible-once="fadeUp(100).visibleOnce" class="text-xl text-gray-400">Choose the plan that works best for you.</p>
         </div>
 
         <div class="grid md:grid-cols-3 gap-8">
-          <div v-for="(p, i) in pricing" :key="i" data-aos="fade-up" :data-aos-delay="i * 100" 
+          <div v-for="(p, i) in pricing" :key="i" v-motion :initial="fadeUp(i * 100).initial" :visible-once="fadeUp(i * 100).visibleOnce"
             :class="['p-10 rounded-[2.5rem] border flex flex-col relative', p.popular ? 'bg-white border-white' : 'bg-gray-800/50 border-gray-700']">
             <div v-if="p.popular" class="absolute -top-4 left-1/2 -translate-x-1/2 bg-orange-500 text-white px-4 py-1 rounded-full text-xs font-bold uppercase tracking-wider">
               Most Popular
@@ -214,9 +232,9 @@ const testimonials = [
     <!-- FAQ Section -->
     <section class="py-24 px-6 bg-white">
       <div class="max-w-3xl mx-auto">
-        <h2 data-aos="fade-up" class="text-3xl lg:text-5xl font-bold text-gray-900 mb-12 text-center">Frequently Asked Questions</h2>
+        <h2 v-motion :initial="fadeUp().initial" :visible-once="fadeUp().visibleOnce" class="text-3xl lg:text-5xl font-bold text-gray-900 mb-12 text-center">Frequently Asked Questions</h2>
         <div class="space-y-4">
-          <div v-for="(faq, i) in faqs" :key="i" data-aos="fade-up" :data-aos-delay="i * 100" class="border border-gray-100 rounded-2xl overflow-hidden">
+          <div v-for="(faq, i) in faqs" :key="i" v-motion :initial="fadeUp(i * 100).initial" :visible-once="fadeUp(i * 100).visibleOnce" class="border border-gray-100 rounded-2xl overflow-hidden">
             <button @click="faq.open = !faq.open" class="w-full p-6 text-left flex items-center justify-between hover:bg-gray-50 transition-all">
               <span class="font-bold text-gray-900">{{ faq.q }}</span>
               <Plus v-if="!faq.open" class="w-5 h-5 text-gray-400" />
@@ -232,7 +250,7 @@ const testimonials = [
 
     <!-- CTA Section -->
     <section class="py-24 px-6">
-      <div data-aos="zoom-in" class="max-w-5xl mx-auto bg-gray-900 rounded-[3rem] p-12 lg:p-20 text-center relative overflow-hidden">
+      <div v-motion :initial="zoomIn().initial" :visible-once="zoomIn().visibleOnce" class="max-w-5xl mx-auto bg-gray-900 rounded-[3rem] p-12 lg:p-20 text-center relative overflow-hidden">
         <div class="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-orange-500/20 via-transparent to-transparent"></div>
         <h2 class="text-3xl lg:text-5xl font-bold text-white mb-8 relative z-10">Ready to transform your <br /> customer experience?</h2>
         <p class="text-gray-400 text-xl mb-10 max-w-2xl mx-auto relative z-10">Join 2,000+ companies using OmniSync AI to automate their support and sales.</p>
