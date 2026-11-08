@@ -15,6 +15,7 @@ import {
   CheckCircle2,
 } from "lucide-vue-next";
 import { supabase } from "@/integrations/supabase/client";
+import { crawlLocally } from "@/integrations/localTraining";
 import { useNotification } from "@/composables/useNotification";
 
 interface Chunk {
@@ -91,33 +92,35 @@ const handleSyncWebsite = async () => {
 
   isSyncing.value = true;
   try {
-    const { data, error } = await supabase.functions.invoke(
-      "import_website_training",
-      {
-        body: {
-          chatbot_id: props.botId,
-          website_url: props.websiteUrl,
-        },
-      },
-    );
+    let pages_scanned = 0;
+    let chunks_created = 0;
 
-    if (error) throw error;
-
-    // عرض تقرير بناءً على الحالة
-    if (data.status === "failed") {
-      showToast(`Sync Complete! Scanned ${data.pages_scanned} pages.`, "error");
-    } else if (data.status === "partial") {
-      showToast(
-        `Sync Complete! Scanned ${data.pages_scanned} pages.`,
-        "warning",
-      );
+    if (import.meta.env.DEV) {
+      // Local-first: crawl + insert via the local server (no Edge Function).
+      const result = await crawlLocally(props.websiteUrl, props.botId);
+      pages_scanned = result.pages_scanned;
+      chunks_created = result.chunks_created;
     } else {
-      showToast(
-        `Sync Complete! Scanned ${data.pages_scanned} pages.`,
-        "success",
+      const { data, error } = await supabase.functions.invoke(
+        "import_website_training",
+        {
+          body: {
+            chatbot_id: props.botId,
+            website_url: props.websiteUrl,
+          },
+        },
       );
+
+      if (error) throw error;
+
+      pages_scanned = data.pages_scanned ?? 0;
+      chunks_created = data.chunks_created ?? 0;
     }
 
+    showToast(
+      `Sync complete! ${pages_scanned} page(s), ${chunks_created} clean knowledge chunks.`,
+      chunks_created > 0 ? "success" : "warning",
+    );
     emit("refresh-chunks");
   } catch (e: any) {
     showToast("Sync failed: " + e.message, "error");

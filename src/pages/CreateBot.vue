@@ -3,6 +3,7 @@ import DashboardLayout from '@/layouts/DashboardLayout.vue';
 import { ref, onMounted, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { supabase } from '@/integrations/supabase/client';
+import { crawlLocally } from '@/integrations/localTraining';
 import { 
   Globe, 
   FileText, 
@@ -172,22 +173,32 @@ const handleCreate = async () => {
   // 2. Handle Training Data
   if (sourceType.value === 'website') {
     try {
-      const { data, error } = await supabase.functions.invoke('import_website_training', {
-        body: { chatbot_id: bot.id, website_url: sourceValue.value }
-      });
-      
-      if (!error && data) {
+      if (import.meta.env.DEV) {
+        const result = await crawlLocally(sourceValue.value, bot.id);
         trainingStatus.value = {
-          pages: data.pages_scanned,
-          chunks: data.chunks_created
+          pages: result.pages_scanned,
+          chunks: result.chunks_created
         };
-        // Wait 2 seconds to show success before redirecting
         setTimeout(() => router.push('/dashboard/bots'), 2500);
       } else {
-        router.push('/dashboard/bots');
+        const { data, error } = await supabase.functions.invoke('import_website_training', {
+          body: { chatbot_id: bot.id, website_url: sourceValue.value }
+        });
+
+        if (data?.success && data.chunks_created > 0) {
+          trainingStatus.value = {
+            pages: data.pages_scanned,
+            chunks: data.chunks_created
+          };
+          // Wait 2 seconds to show success before redirecting
+          setTimeout(() => router.push('/dashboard/bots'), 2500);
+        } else {
+          showToast(data?.message || 'The crawl returned no usable content — the bot is saved but untrained.', 'warning');
+          setTimeout(() => router.push('/dashboard/bots'), 1500);
+        }
       }
-    } catch (e) {
-      console.error("Scraping failed:", e);
+    } catch (e: any) {
+      showToast('Scrape failed: ' + (e.message || e), 'error');
       router.push('/dashboard/bots');
     }
   } else if (sourceType.value === 'pdf') {
