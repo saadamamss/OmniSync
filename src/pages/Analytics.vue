@@ -10,7 +10,6 @@ import {
   Clock,
   ArrowUpRight,
   ArrowDownRight,
-  Loader2,
   Target,
   Zap
 } from 'lucide-vue-next';
@@ -222,11 +221,7 @@ onMounted(fetchAnalytics);
         <p class="text-gray-500 mt-1">Track your AI performance and customer engagement metrics.</p>
       </div>
 
-      <div v-if="loading" class="py-20 flex justify-center">
-        <Loader2 class="w-10 h-10 animate-spin text-orange-500" />
-      </div>
-
-      <div v-else class="space-y-8">
+      <div class="space-y-8">
         <!-- Key Metrics -->
         <div v-if="loading" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6" role="status" aria-busy="true">
           <div v-for="i in 4" :key="i" class="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-4">

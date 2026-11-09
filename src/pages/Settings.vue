@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   ArrowDownCircle
 } from 'lucide-vue-next';
+import BaseSkeleton from '@/components/ui/BaseSkeleton.vue';
 
 const { showToast, askConfirm } = useNotification();
 const loading = ref(true);
@@ -255,8 +256,54 @@ onMounted(fetchProfile);
         <p class="text-gray-500 mt-1">Manage your profile, security, and subscription.</p>
       </div>
 
-      <div v-if="loading" class="py-20 flex justify-center">
-        <Loader2 class="w-10 h-10 animate-spin text-orange-500" />
+      <div v-if="loading" class="space-y-8 pb-20" role="status" aria-busy="true">
+        <!-- Profile section ghost -->
+        <div class="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden">
+          <div class="p-8 border-b border-gray-50 flex items-center justify-between">
+            <div class="flex items-center space-x-4">
+              <BaseSkeleton className="w-10 h-10" rounded="rounded-xl" />
+              <BaseSkeleton className="h-5 w-44" rounded="rounded-lg" />
+            </div>
+            <BaseSkeleton className="h-10 w-36" rounded="rounded-xl" />
+          </div>
+          <div class="p-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div v-for="i in 2" :key="i" class="space-y-2">
+              <BaseSkeleton className="h-3 w-20 ml-1" />
+              <BaseSkeleton className="h-14 w-full" rounded="rounded-2xl" />
+            </div>
+          </div>
+        </div>
+        <!-- Security section ghost -->
+        <div class="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden">
+          <div class="p-8 border-b border-gray-50 flex items-center justify-between">
+            <div class="flex items-center space-x-4">
+              <BaseSkeleton className="w-10 h-10" rounded="rounded-xl" />
+              <BaseSkeleton className="h-5 w-24" rounded="rounded-lg" />
+            </div>
+            <BaseSkeleton className="h-10 w-40" rounded="rounded-xl" />
+          </div>
+          <div class="p-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div v-for="i in 2" :key="i" class="space-y-2">
+              <BaseSkeleton className="h-3 w-28 ml-1" />
+              <BaseSkeleton className="h-14 w-full" rounded="rounded-2xl" />
+            </div>
+          </div>
+        </div>
+        <!-- Subscription section ghost -->
+        <div class="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden">
+          <div class="p-8 border-b border-gray-50 flex items-center space-x-4">
+            <BaseSkeleton className="w-10 h-10" rounded="rounded-xl" />
+            <BaseSkeleton className="h-5 w-40" rounded="rounded-lg" />
+          </div>
+          <div class="p-8 space-y-6">
+            <BaseSkeleton className="h-40 w-full" rounded="rounded-3xl" />
+            <BaseSkeleton className="h-24 w-full" rounded="rounded-2xl" />
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <BaseSkeleton className="h-24 w-full" rounded="rounded-2xl" />
+              <BaseSkeleton className="h-24 w-full" rounded="rounded-2xl" />
+            </div>
+          </div>
+        </div>
       </div>
 
       <div v-else class="space-y-8 pb-20">

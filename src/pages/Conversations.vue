@@ -14,9 +14,9 @@ import {
   Bot,
   ArrowLeft,
   ChevronRight,
-  Loader2,
   Inbox
 } from 'lucide-vue-next';
+import BaseSkeleton from '@/components/ui/BaseSkeleton.vue';
 
 // Drill-down view state: bots -> conversations -> chat
 const view = ref<'bots' | 'conversations' | 'chat'>('bots');
@@ -222,8 +222,17 @@ onMounted(async () => {
 
         <!-- ── Level 1: Bots ── -->
         <div v-if="view === 'bots'" class="w-full flex flex-col">
-          <div v-if="loading" class="p-10 flex justify-center">
-            <Loader2 class="w-6 h-6 animate-spin text-orange-500" />
+          <div v-if="loading" class="divide-y divide-gray-50" role="status" aria-busy="true">
+            <div v-for="i in 4" :key="i" class="p-5 flex items-center justify-between">
+              <div class="flex items-center space-x-4">
+                <BaseSkeleton className="w-12 h-12" rounded="rounded-2xl" />
+                <div class="space-y-2">
+                  <BaseSkeleton className="h-4 w-36" />
+                  <BaseSkeleton className="h-2.5 w-28" />
+                </div>
+              </div>
+              <BaseSkeleton className="w-5 h-5" />
+            </div>
           </div>
           <div v-else-if="bots.length === 0" class="p-10 text-center">
             <Inbox class="w-10 h-10 text-gray-200 mx-auto mb-4" />
@@ -260,8 +269,17 @@ onMounted(async () => {
             </div>
 
             <div class="flex-1 overflow-y-auto">
-              <div v-if="loading" class="p-10 flex justify-center">
-                <Loader2 class="w-6 h-6 animate-spin text-orange-500" />
+              <div v-if="loading" class="divide-y divide-gray-50" role="status" aria-busy="true">
+                <div v-for="i in 5" :key="i" class="p-4 flex items-center justify-between">
+                  <div class="flex items-center space-x-3">
+                    <BaseSkeleton className="w-10 h-10" rounded="rounded-full" />
+                    <div class="space-y-2">
+                      <BaseSkeleton className="h-3.5 w-32" />
+                      <BaseSkeleton className="h-2.5 w-24" />
+                    </div>
+                  </div>
+                  <BaseSkeleton className="w-4 h-4" />
+                </div>
               </div>
               <div v-else-if="filteredConversations.length === 0" class="p-10 text-center">
                 <Inbox class="w-10 h-10 text-gray-200 mx-auto mb-4" />
@@ -311,8 +329,14 @@ onMounted(async () => {
 
               <!-- Messages -->
               <div class="flex-1 overflow-y-auto p-6 space-y-4">
-                <div v-if="loadingMessages" class="flex justify-center py-10">
-                  <Loader2 class="w-6 h-6 animate-spin text-orange-500" />
+                <div v-if="loadingMessages" class="space-y-4" role="status" aria-busy="true">
+                  <div v-for="(h, i) in [1, 0, 1, 0]" :key="i" :class="['flex', h ? 'justify-end' : 'justify-start']">
+                    <div :class="['space-y-2 p-4 rounded-2xl shadow-sm', h ? 'bg-gray-200/40 rounded-tr-none' : 'bg-white border border-gray-50 rounded-tl-none']">
+                      <BaseSkeleton className="h-3 w-52" rounded="rounded-md" />
+                      <BaseSkeleton :className="h ? 'h-3 w-36' : 'h-3 w-44'" rounded="rounded-md" />
+                      <BaseSkeleton className="h-2 w-10" />
+                    </div>
+                  </div>
                 </div>
                 <div v-for="msg in messages" :key="msg.id" 
                   :class="['flex', msg.role === 'user' ? 'justify-end' : 'justify-start']">
