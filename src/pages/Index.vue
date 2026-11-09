@@ -23,7 +23,7 @@ const zoomIn = (delay = 0) => ({
 const features = [
   {
     title: 'Instant Training',
-    desc: 'Train your AI on your website, PDFs, or text in seconds.',
+    desc: 'Train your AI on your PDFs or text in seconds.',
     icon: Zap,
     color: 'bg-blue-50 text-blue-600'
   },
@@ -53,7 +53,7 @@ const pricing = [
     id: 'starter',
     price: '0',
     desc: 'Perfect for side projects',
-    features: ['1 Chatbot', '1,000 messages/mo', 'Website crawling', 'Standard support'],
+    features: ['1 Chatbot', '1,000 messages/mo', 'Text & PDF training', 'Standard support'],
     cta: 'Start for Free',
     popular: false
   },
@@ -80,7 +80,7 @@ const pricing = [
 const faqs = ref([
   {
     q: "How does the AI learn about my business?",
-    a: "You can provide your website URL, upload PDF documents, or paste raw text. Our AI crawls and indexes this information to provide accurate answers based solely on your data.",
+    a: "You can upload PDF documents or paste raw text. Our AI extracts and indexes this information to provide accurate answers based solely on your data.",
     open: false
   },
   {

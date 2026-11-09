@@ -2,20 +2,15 @@
 import { ref } from "vue";
 import {
   BrainCircuit,
-  Info,
   Plus,
   Trash2,
   ChevronDown,
   ChevronUp,
   FileUp,
   Loader2,
-  RefreshCw,
-  Globe,
   Eraser,
   CheckCircle2,
 } from "lucide-vue-next";
-import { supabase } from "@/integrations/supabase/client";
-import { crawlLocally } from "@/integrations/localTraining";
 import { useNotification } from "@/composables/useNotification";
 
 interface Chunk {
@@ -27,9 +22,7 @@ interface Chunk {
 
 const props = defineProps<{
   chunks: Chunk[];
-  sourceType: string;
   botId: string;
-  websiteUrl?: string;
 }>();
 
 const emit = defineEmits([
@@ -38,13 +31,11 @@ const emit = defineEmits([
   "remove-chunk",
   "bulk-add",
   "refresh-chunks",
-  "update:websiteUrl",
 ]);
 const { showToast, askConfirm } = useNotification();
 
 const bulkFileInput = ref<HTMLInputElement | null>(null);
 const isParsing = ref(false);
-const isSyncing = ref(false);
 
 const addChunk = () => {
   const newChunk: Chunk = { title: "", content: "", isExpanded: true };
@@ -85,48 +76,6 @@ const updateChunk = (
   const updatedChunks = [...props.chunks];
   updatedChunks[index] = { ...updatedChunks[index], [field]: value };
   emit("update:chunks", updatedChunks);
-};
-
-const handleSyncWebsite = async () => {
-  if (!props.websiteUrl) return;
-
-  isSyncing.value = true;
-  try {
-    let pages_scanned = 0;
-    let chunks_created = 0;
-
-    if (import.meta.env.DEV) {
-      // Local-first: crawl + insert via the local server (no Edge Function).
-      const result = await crawlLocally(props.websiteUrl, props.botId);
-      pages_scanned = result.pages_scanned;
-      chunks_created = result.chunks_created;
-    } else {
-      const { data, error } = await supabase.functions.invoke(
-        "import_website_training",
-        {
-          body: {
-            chatbot_id: props.botId,
-            website_url: props.websiteUrl,
-          },
-        },
-      );
-
-      if (error) throw error;
-
-      pages_scanned = data.pages_scanned ?? 0;
-      chunks_created = data.chunks_created ?? 0;
-    }
-
-    showToast(
-      `Sync complete! ${pages_scanned} page(s), ${chunks_created} clean knowledge chunks.`,
-      chunks_created > 0 ? "success" : "warning",
-    );
-    emit("refresh-chunks");
-  } catch (e: any) {
-    showToast("Sync failed: " + e.message, "error");
-  } finally {
-    isSyncing.value = false;
-  }
 };
 
 const handleBulkUpload = (event: Event) => {
@@ -171,61 +120,6 @@ const handleBulkUpload = (event: Event) => {
 
 <template>
   <div class="space-y-6">
-    <!-- Website Sync Section (Only for Website Bots) -->
-    <div
-      v-if="sourceType === 'website'"
-      class="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm"
-    >
-      <div class="flex items-center justify-between mb-6">
-        <div class="flex items-center space-x-3">
-          <div class="bg-blue-50 p-2.5 rounded-xl text-blue-600">
-            <Globe class="w-6 h-6" />
-          </div>
-          <div>
-            <h3 class="text-xl font-bold">Website Sync</h3>
-            <p class="text-xs text-gray-400">
-              Keep your AI updated with your site content.
-            </p>
-          </div>
-        </div>
-        <button
-          @click="handleSyncWebsite"
-          :disabled="isSyncing || !websiteUrl"
-          class="bg-gray-900 text-white px-6 py-2.5 rounded-xl text-sm font-bold flex items-center hover:bg-gray-800 transition-all disabled:opacity-50 shadow-lg shadow-gray-200"
-        >
-          <Loader2 v-if="isSyncing" class="w-4 h-4 mr-2 animate-spin" />
-          <RefreshCw v-else class="w-4 h-4 mr-2" />
-          {{ isSyncing ? "Syncing..." : "Sync Now" }}
-        </button>
-      </div>
-
-      <div class="space-y-2">
-        <label
-          class="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1"
-          >Target Website URL</label
-        >
-        <input
-          :value="websiteUrl"
-          @input="
-            $emit(
-              'update:websiteUrl',
-              ($event.target as HTMLInputElement).value,
-            )
-          "
-          type="url"
-          placeholder="https://example.com"
-          class="w-full px-4 py-3.5 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-orange-500 outline-none transition-all"
-        />
-        <div
-          class="flex items-center mt-3 text-[10px] text-gray-400 bg-gray-50 p-3 rounded-xl"
-        >
-          <Info class="w-3 h-3 mr-2 text-blue-500" />
-          Clicking "Sync Now" will re-scan this URL and common pages to update
-          the knowledge base.
-        </div>
-      </div>
-    </div>
-
     <!-- Knowledge Manager -->
     <div class="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm">
       <div
@@ -291,7 +185,7 @@ const handleBulkUpload = (event: Event) => {
             No knowledge topics found.
           </p>
           <p class="text-xs text-gray-300 mt-1">
-            Add some manually or sync your website to train your AI.
+            Add topics manually or bulk import them to train your AI.
           </p>
         </div>
 

@@ -3,18 +3,16 @@ import DashboardLayout from '@/layouts/DashboardLayout.vue';
 import { ref, onMounted, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { supabase } from '@/integrations/supabase/client';
-import { crawlLocally } from '@/integrations/localTraining';
 import { 
-  Globe, 
-  FileText, 
-  Type, 
-  ArrowRight, 
+  Globe,
+  FileText,
+  Type,
+  ArrowRight,
   Loader2,
   ChevronLeft,
   AlertCircle,
   Upload,
   CheckCircle2,
-  Sparkles
 } from 'lucide-vue-next';
 import { useNotification } from '@/composables/useNotification';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -26,7 +24,7 @@ const router = useRouter();
 const { showToast } = useNotification();
 const step = ref(1);
 const botName = ref('');
-const sourceType = ref('website');
+const sourceType = ref('text');
 const sourceValue = ref('');
 const pdfFileName = ref('');
 const isExtractingPdf = ref(false);
@@ -35,7 +33,7 @@ const checkingPlan = ref(true);
 const planLimitReached = ref(false);
 const userPlan = ref('starter');
 const fileInput = ref<HTMLInputElement | null>(null);
-const trainingStatus = ref<{ pages: number, chunks: number } | null>(null);
+
 
 const PLAN_LIMITS: Record<string, number> = {
   'starter': 1,
@@ -152,7 +150,7 @@ const handleCreate = async () => {
       user_id: user.id,
       settings: {
         source_type: sourceType.value,
-        source_value: sourceType.value === 'website' ? sourceValue.value : '', 
+        source_value: '',
         appearance: {
           primaryColor: '#f97316',
           welcomeMessage: 'Hello! How can I help you today?',
@@ -171,37 +169,7 @@ const handleCreate = async () => {
   }
 
   // 2. Handle Training Data
-  if (sourceType.value === 'website') {
-    try {
-      if (import.meta.env.DEV) {
-        const result = await crawlLocally(sourceValue.value, bot.id);
-        trainingStatus.value = {
-          pages: result.pages_scanned,
-          chunks: result.chunks_created
-        };
-        setTimeout(() => router.push('/dashboard/bots'), 2500);
-      } else {
-        const { data, error } = await supabase.functions.invoke('import_website_training', {
-          body: { chatbot_id: bot.id, website_url: sourceValue.value }
-        });
-
-        if (data?.success && data.chunks_created > 0) {
-          trainingStatus.value = {
-            pages: data.pages_scanned,
-            chunks: data.chunks_created
-          };
-          // Wait 2 seconds to show success before redirecting
-          setTimeout(() => router.push('/dashboard/bots'), 2500);
-        } else {
-          showToast(data?.message || 'The crawl returned no usable content — the bot is saved but untrained.', 'warning');
-          setTimeout(() => router.push('/dashboard/bots'), 1500);
-        }
-      }
-    } catch (e: any) {
-      showToast('Scrape failed: ' + (e.message || e), 'error');
-      router.push('/dashboard/bots');
-    }
-  } else if (sourceType.value === 'pdf') {
+  if (sourceType.value === 'pdf') {
     if (!sourceValue.value.trim()) {
       showToast('No text could be extracted from the PDF — pick a text-based PDF or paste the content manually.', 'error');
       loading.value = false;
@@ -291,30 +259,13 @@ onMounted(checkPlanLimits);
 
         <div v-if="step === 2" class="space-y-6">
           <div v-if="loading" class="bg-white p-12 rounded-[3rem] border border-gray-100 shadow-sm text-center">
-            <div v-if="!trainingStatus">
-              <Loader2 class="w-12 h-12 animate-spin text-orange-500 mx-auto mb-6" />
-              <h3 class="text-xl font-bold mb-2">Training your AI...</h3>
-              <p class="text-gray-500">We are crawling your website and indexing the content. This may take up to 30 seconds.</p>
-            </div>
-            <div v-else class="animate-in zoom-in duration-500">
-              <div class="bg-green-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-6">
-                <CheckCircle2 class="text-green-500 w-10 h-10" />
-              </div>
-              <h3 class="text-xl font-bold mb-2">Training Complete!</h3>
-              <p class="text-gray-500 mb-4">Successfully scanned {{ trainingStatus.pages }} pages and created {{ trainingStatus.chunks }} knowledge topics.</p>
-              <div class="flex items-center justify-center text-orange-600 font-bold text-sm">
-                <Sparkles class="w-4 h-4 mr-2" /> Redirecting to dashboard...
-              </div>
-            </div>
+            <Loader2 class="w-12 h-12 animate-spin text-orange-500 mx-auto mb-6" />
+            <h3 class="text-xl font-bold mb-2">Training your AI...</h3>
+            <p class="text-gray-500">Indexing your content. This may take a few seconds.</p>
           </div>
 
           <div v-else class="space-y-6">
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <button @click="sourceType = 'website'" 
-                :class="['p-6 rounded-2xl border-2 text-left transition-all', sourceType === 'website' ? 'border-orange-500 bg-orange-50' : 'border-gray-100 bg-white hover:border-gray-200']">
-                <Globe :class="['w-8 h-8 mb-4', sourceType === 'website' ? 'text-orange-500' : 'text-gray-400']" />
-                <h3 class="font-bold">Website</h3>
-              </button>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <button @click="canUsePDF ? sourceType = 'pdf' : showToast('PDF support requires Pro plan.', 'warning')" 
                 :class="['p-6 rounded-2xl border-2 text-left transition-all relative overflow-hidden', !canUsePDF ? 'opacity-60 cursor-not-allowed' : '', sourceType === 'pdf' ? 'border-orange-500 bg-orange-50' : 'border-gray-100 bg-white hover:border-gray-200']"
                 :disabled="!canUsePDF">
@@ -335,11 +286,6 @@ onMounted(checkPlanLimits);
             </div>
 
             <div class="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm">
-              <div v-if="sourceType === 'website'" class="space-y-4">
-                <label class="block text-sm font-medium text-gray-700">Website URL</label>
-                <input v-model="sourceValue" type="url" placeholder="https://example.com"
-                  class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-orange-500 outline-none" />
-              </div>
               <div v-if="sourceType === 'pdf'" class="space-y-4">
                 <label class="block text-sm font-medium text-gray-700">PDF File</label>
                 <div class="border-2 border-dashed border-gray-200 rounded-xl p-6 text-center hover:border-gray-300 transition-colors">
@@ -379,7 +325,7 @@ onMounted(checkPlanLimits);
                 <button @click="step = 1" class="flex-1 py-4 rounded-xl font-bold border border-gray-200 hover:bg-gray-50 transition-all">Back</button>
                 <button @click="handleCreate" :disabled="loading || !sourceValue"
                   class="flex-[2] bg-gray-900 text-white py-4 rounded-xl font-bold hover:bg-gray-800 disabled:opacity-50 transition-all flex items-center justify-center">
-                  {{ sourceType === 'website' ? 'Scan & Create' : 'Create Chatbot' }}
+                  {{ sourceType === 'pdf' ? 'Create Chatbot' : 'Create Chatbot' }}
                 </button>
               </div>
             </div>

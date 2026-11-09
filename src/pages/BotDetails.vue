@@ -354,8 +354,6 @@ onMounted(fetchBotData);
           <BotTraining
             v-if="activeTab === 'training'"
             v-model:chunks="chunks"
-            v-model:websiteUrl="bot.settings.source_value"
-            :sourceType="bot.settings.source_type"
             :botId="bot.id"
             @add-chunk="handleAddChunk"
             @bulk-add="handleBulkAdd"

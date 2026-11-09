@@ -44,7 +44,7 @@ create table if not exists knowledge_chunks (
   title text,
   content text not null,
   -- ⚠️ 1536 dims matches text-embedding-3-small, the one and only model
-  -- allowed here. Training (import_website_training) and querying (chat)
+  -- allowed here. Every trainer inserts chunks and querying (chat)
   -- MUST use the same embedding model — see supabase/functions/_shared/embeddings.ts
   embedding vector(1536),
   created_at timestamptz default now()
