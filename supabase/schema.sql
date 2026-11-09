@@ -213,11 +213,14 @@ create policy "Users can CRUD own chatbots"
   on chatbots for all using (auth.uid() = user_id);
 
 -- Widget needs to read bot config as an anonymous visitor.
--- Exposure is intentionally narrowed: only ACTIVE bots, and the widget
--- queries select specific columns (id, name, is_active, settings) — never *.
+-- Exposure is intentionally narrowed: only ACTIVE bots, ANON ONLY, and the
+-- widget queries select specific columns (id, name, is_active, settings) —
+-- never *. Omitting `to anon` made this policy apply to every signed-in
+-- user too, leaking all active bots of all users onto their dashboards.
 drop policy if exists "Public can view active bots (widget)" on chatbots;
 create policy "Public can view active bots (widget)"
   on chatbots for select
+  to anon
   using (is_active = true);
 
 -- training_documents
