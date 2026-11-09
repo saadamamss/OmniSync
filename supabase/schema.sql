@@ -547,13 +547,22 @@ $$ language plpgsql security definer;
 -- [H4] Wire enforce_plan_bot_limits() so the plan cap is enforced by the
 -- database, not just the frontend. Runs when a chatbot is created and when
 -- a plan changes (manual upgrade or Stripe webhook downgrade).
+-- ATTENTION: this function is attached to two tables with different key
+-- columns (chatbots.user_id vs profiles.id), so resolve the owner id from
+-- whichever table fired the trigger. Hardcoding NEW.user_id made plan
+-- updates on profiles fail with 'record "new" has no field "user_id"'.
 create or replace function public.apply_plan_bot_limits()
 returns trigger as $$
 declare
+  v_owner_id uuid;
   v_plan text;
 begin
-  select plan into v_plan from profiles where id = NEW.user_id;
-  perform enforce_plan_bot_limits(NEW.user_id, coalesce(v_plan, 'starter'));
+  v_owner_id := case
+    when TG_TABLE_NAME = 'chatbots' then NEW.user_id
+    else NEW.id
+  end;
+  select plan into v_plan from profiles where id = v_owner_id;
+  perform enforce_plan_bot_limits(v_owner_id, coalesce(v_plan, 'starter'));
   return null;
 end;
 $$ language plpgsql security definer;
