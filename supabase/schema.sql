@@ -524,3 +524,40 @@ drop trigger if exists trg_plan_chunk_quota on knowledge_chunks;
 create trigger trg_plan_chunk_quota
   before insert on knowledge_chunks
   for each row execute function enforce_plan_chunk_quota();
+-- 9. One concept: every chunk belongs to a source
+-- Before training_documents existed, hand-written topics were inserted straight
+-- into knowledge_chunks with document_id = null, so they had no lineage and
+-- were invisible to the sources panel. Fold each bot's orphans into a single
+-- "Legacy topics" source instead of leaving two parallel kinds of knowledge.
+-- Safe to re-run: the source is created once, and already-linked chunks are
+-- skipped. These chunks keep whatever embeddings they had (hand-written ones
+-- had none), so the keyword arm of hybrid search still finds them.
+insert into training_documents (chatbot_id, source_type, title, status, char_count)
+select c.chatbot_id, 'text', 'Legacy topics', 'ready', sum(char_length(c.content))
+from knowledge_chunks c
+where c.document_id is null
+  and not exists (
+    select 1 from training_documents d
+    where d.chatbot_id = c.chatbot_id
+      and d.title = 'Legacy topics'
+      and d.content_hash is null
+  )
+group by c.chatbot_id;
+
+update knowledge_chunks c
+set document_id = d.id
+from training_documents d
+where c.document_id is null
+  and d.chatbot_id = c.chatbot_id
+  and d.title = 'Legacy topics'
+  -- content_hash is null only for this backfilled row: ingest always sets it.
+  and d.content_hash is null
+  and d.storage_path is null;
+
+update training_documents d
+set chunk_count = (
+  select count(*) from knowledge_chunks k where k.document_id = d.id
+)
+where d.title = 'Legacy topics'
+  and d.content_hash is null
+  and d.storage_path is null;

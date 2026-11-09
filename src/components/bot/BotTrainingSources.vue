@@ -39,9 +39,12 @@ const pdfName = ref("");
 const pdfText = ref("");
 const isExtracting = ref(false);
 const isAdding = ref(false);
+const isBulkImporting = ref(false);
+const bulkProgress = ref("");
 const errorMessage = ref("");
 const quotaMessage = ref("");
 const fileInput = ref<HTMLInputElement | null>(null);
+const bulkInput = ref<HTMLInputElement | null>(null);
 const userPlan = ref("starter");
 
 const canUsePDF = computed(() => ["pro", "enterprise"].includes(userPlan.value));
@@ -75,6 +78,69 @@ const loadDocuments = async () => {
   } finally {
     loading.value = false;
   }
+};
+
+// A .txt made of "Title: ..." / "Content: ..." blocks separated by --- becomes
+// one source per block, so the import goes through the same pipeline.
+const handleBulkImport = async (event: Event) => {
+  const target = event.target as HTMLInputElement;
+  const file = target.files?.[0];
+  target.value = "";
+  if (!file) return;
+
+  const raw = await file.text();
+  const sections = raw.split(/^---$/m);
+  const entries: { title: string; content: string }[] = [];
+
+  for (const section of sections) {
+    const titleMatch = section.match(/Title:\s*(.*)/i);
+    const contentMatch = section.match(/Content:\s*([\s\S]*)/i);
+    const content = contentMatch?.[1]?.trim() ?? "";
+    if (!content) continue;
+    entries.push({
+      title: titleMatch?.[1]?.trim() || `Imported source ${entries.length + 1}`,
+      content,
+    });
+  }
+
+  if (entries.length === 0) {
+    showToast("No \"Title:/Content:\" blocks found in that file.", "warning");
+    return;
+  }
+
+  isBulkImporting.value = true;
+  errorMessage.value = "";
+  let imported = 0;
+  let duplicates = 0;
+  const failures: string[] = [];
+
+  for (const [index, entry] of entries.entries()) {
+    bulkProgress.value = `Importing ${index + 1} of ${entries.length}...`;
+    try {
+      const result = await ingestDocument({
+        botId: props.botId,
+        title: entry.title,
+        sourceType: "text",
+        text: entry.content,
+      });
+      if (result.duplicate) duplicates += 1;
+      else imported += 1;
+    } catch (failure) {
+      failures.push(`${entry.title}: ${(failure as Error).message}`);
+    }
+  }
+
+  bulkProgress.value = "";
+  isBulkImporting.value = false;
+  await loadDocuments();
+
+  const parts = [`${imported} imported`];
+  if (duplicates) parts.push(`${duplicates} already indexed`);
+  if (failures.length) parts.push(`${failures.length} failed`);
+  showToast(
+    parts.join(", ") + (failures.length ? ` — ${failures[0]}` : "."),
+    failures.length ? "warning" : "success",
+  );
 };
 
 const resetForm = () => {
@@ -213,20 +279,40 @@ watch(() => props.botId, loadDocuments);
           <Database class="w-6 h-6" />
         </div>
         <div>
-          <h3 class="text-xl font-bold">Training Sources</h3>
+          <h3 class="text-xl font-bold">Knowledge Sources</h3>
           <p class="text-xs text-gray-400">
             {{ documents.length }} source{{ documents.length === 1 ? "" : "s" }} ·
             {{ totalChunks }} chunk{{ totalChunks === 1 ? "" : "s" }} indexed
           </p>
         </div>
       </div>
-      <button
-        @click="showAdd = !showAdd"
-        class="bg-orange-500 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center justify-center hover:bg-orange-600 transition-all shadow-sm"
-      >
-        <Plus class="w-4 h-4 mr-1.5" /> Add Source
-      </button>
+      <div class="flex items-center space-x-2">
+        <button
+          @click="bulkInput?.click()"
+          :disabled="isBulkImporting || isAdding"
+          class="bg-gray-100 text-gray-700 px-4 py-2 rounded-xl text-sm font-bold flex items-center hover:bg-gray-200 disabled:opacity-50 transition-all"
+          title="Import a .txt of Title:/Content: blocks"
+        >
+          <Upload class="w-4 h-4 mr-1.5" />
+          {{ isBulkImporting ? "Importing..." : "Import .txt" }}
+        </button>
+        <input
+          ref="bulkInput"
+          type="file"
+          accept=".txt"
+          class="hidden"
+          @change="handleBulkImport"
+        />
+        <button
+          @click="showAdd = !showAdd"
+          class="bg-orange-500 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center justify-center hover:bg-orange-600 transition-all shadow-sm"
+        >
+          <Plus class="w-4 h-4 mr-1.5" /> Add Source
+        </button>
+      </div>
     </div>
+
+    <p v-if="bulkProgress" class="text-xs text-gray-500">{{ bulkProgress }}</p>
 
     <!-- Plan limit reached -->
     <div
@@ -266,7 +352,7 @@ watch(() => props.botId, loadDocuments);
               mode === 'text' ? 'text-orange-500' : 'text-gray-400',
             ]"
           />
-          <span class="text-sm font-bold">Pasted Text</span>
+          <span class="text-sm font-bold">Text</span>
         </button>
         <button
           @click="
@@ -312,7 +398,7 @@ watch(() => props.botId, loadDocuments);
         <textarea
           v-model="text"
           rows="5"
-          placeholder="Paste the knowledge you want your bot to answer from..."
+          placeholder="Paste the knowledge your bot should answer from — an FAQ, a policy, product details..."
           class="w-full px-4 py-3 bg-white rounded-xl border border-gray-200 text-sm focus:ring-2 focus:ring-orange-500 outline-none resize-none transition-all"
         ></textarea>
       </div>
@@ -382,9 +468,10 @@ watch(() => props.botId, loadDocuments);
       >
         <Database class="w-7 h-7 text-gray-200" />
       </div>
-      <p class="text-gray-400 text-sm font-medium">No training sources yet.</p>
+      <p class="text-gray-400 text-sm font-medium">No knowledge sources yet.</p>
       <p class="text-xs text-gray-300 mt-1">
-        Add text or a PDF and the bot will answer from exactly this content.
+        Add text or a PDF — it is cleaned, split into chunks and embedded, and the
+        bot answers from exactly that content.
       </p>
     </div>
 

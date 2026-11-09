@@ -100,7 +100,9 @@ serve(async (req) => {
     if (bot.user_id !== user.id) return json({ error: "This bot is not yours" }, 403);
 
     const cleaned = cleanText(sourceText);
-    if (cleaned.length < 20) {
+    // A titled one-liner is a legitimate source (short FAQ answers), so this is
+    // a junk filter, not a length requirement.
+    if (cleaned.length < 10) {
       return json(
         { error: "Not enough readable text to train on" },
         400,
