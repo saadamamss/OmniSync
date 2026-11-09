@@ -128,6 +128,34 @@ create table if not exists messages (
   created_at timestamptz default now()
 );
 
+-- ── PLAN-12 Phase 1 indexes: stop seq-scans on thread & analytics reads ──
+create index if not exists conversations_chatbot_idx
+  on conversations(chatbot_id);
+
+create index if not exists messages_conversation_idx
+  on messages(conversation_id);
+
+create index if not exists messages_created_at_idx
+  on messages(created_at);
+
+-- ── PLAN-12 Phase 1: updated_at trigger on conversations ───────────────
+-- Bumped on every message insert so conversation lists sort by "most recent
+-- activity" instead of creation time.
+create or replace function public.touch_conversation_updated_at()
+returns trigger as $$
+begin
+  update conversations
+  set updated_at = now()
+  where id = NEW.conversation_id;
+  return new;
+end;
+$$ language plpgsql;
+
+drop trigger if exists trg_touch_conversation_updated_at on messages;
+create trigger trg_touch_conversation_updated_at
+  after insert on messages
+  for each row execute function public.touch_conversation_updated_at();
+
 -- RLS Policies
 alter table profiles enable row level security;
 alter table chatbots enable row level security;

@@ -98,6 +98,24 @@ serve(async (req) => {
     // NOTE: usage is incremented only after a successful AI reply below —
     // billing before the answer let any visitor drain an owner's quota for free.
 
+    // Conversation ownership check FIRST: a doomed write must never reach the
+    // AI call (we'd pay for a reply we cannot store). Needs only bot_id, so
+    // it lives right here before the plan/limit machinery.
+    if (conversation_id) {
+      const { data: conv, error: convError } = await supabase
+        .from('conversations')
+        .select('chatbot_id')
+        .eq('id', conversation_id)
+        .single();
+
+      if (convError || !conv || conv.chatbot_id !== bot_id) {
+        return new Response(
+          JSON.stringify({ error: 'Conversation does not belong to this bot' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
     const groqKey = Deno.env.get('GROQ_API_KEY');
     if (!groqKey) throw new Error("GROQ_API_KEY not configured in Supabase secrets");
     const openAiKey = Deno.env.get('OPENAI_API_KEY');
