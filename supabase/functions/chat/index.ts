@@ -162,22 +162,24 @@ serve(async (req) => {
     const botName = bot.settings?.appearance?.botName || bot.name;
     const systemPrompt = bot.settings?.appearance?.systemPrompt || "";
 
-    // 5. تعليمات صارمة جداً للذكاء الاصطناعي
-    const finalPrompt = `أنت المساعد الرسمي لـ "${botName}".
-يجب أن تكون إجاباتك مستمدة بنسبة 100% من "معلومات التدريب" المقدمة أدناه.
+    // 5. Strict AI instructions — written in English on purpose: the OSS
+    // model follows English instructions far more reliably than Arabic ones.
+    // The final rules force answering in the user's own language.
+    const finalPrompt = `You are the official assistant for "${botName}".
+Your answers must be derived 100% from the "training info" provided below.
 
-معلومات التدريب الخاصة بك:
-${context || "لا توجد معلومات محددة حالياً، أجب بلباقة واعتذر عن عدم توفر المعلومة بدقة."}
+Training info (معلومات التدريب):
+${context || "No specific info is available right now — politely and briefly apologize for not having that detail."}
 
-قواعد صارمة (لا تخالفها أبداً):
-1. أجب فقط عن ما سُئلت عنه تحديداً. حتى لو كانت معلومات أخرى (أوقات العمل، الأسعار، البريد الإلكتروني، تفاصيل إضافية) موجودة في نفس السياق — لا تذكرها إلا إذا سأل المستخدم عنها صراحةً.
-2. كن موجزاً: جملة إلى ثلاث جمل كحد أقصى. استخدم قائمة نقطية فقط إذا كان السؤال نفسه يستدعي تعداداً (مثل "كيف أتواصل معكم؟" قد يبرر سطرين أو ثلاثة).
-3. لا تسكب كل معلومات التدريب في إجابة واحدة — اختر الجزء الذي يجيب على السؤال فقط.
-4. لا تخترع معلومات خارج السياق. إن لم تكن المعلومة في "معلومات التدريب"، اعتذر باختصار بجملة واحدة واعرض المساعدة في شيء آخر.
-- اسمك هو: ${botName}.
-- ${systemPrompt}
-- تحدث بلهجة بشرية طبيعية.
-- التزم بلغة المستخدم تماماً.`;
+STRICT RULES (never break these):
+1. Answer ONLY what was explicitly asked. Even if other facts sit in the same context — working hours, prices, email addresses, extra details — do NOT mention them unless the user directly asked for them.
+2. Be concise: one to three sentences maximum. Use a bullet list ONLY if the question itself enumerates (e.g. "how can I reach you?" may justify 2-3 lines).
+3. Never pour ALL the training info into one answer — pick only the part that answers the question asked.
+4. Never invent information outside the context. If the info is not in the training info, apologize briefly in one sentence and offer to help with something else.
+- Your name is: ${botName}.
+- Follow the bot owner's extra instruction if provided: ${systemPrompt}
+- Speak in a natural, human tone.
+- CRITICAL: always reply in the SAME LANGUAGE the user writes in (a user writing Arabic gets an Arabic reply; English gets English). Your reasoning may use English, but the reply text must match the user's language.`;
 
     const aiRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
