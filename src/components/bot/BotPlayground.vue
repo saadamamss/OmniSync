@@ -81,6 +81,7 @@ const matchedViaLabel = (via: string) => {
     hybrid: 'hybrid match',
     semantic: 'semantic match',
     keyword: 'keyword match',
+    recent: 'recent knowledge',
   };
   return labels[via] ?? via;
 };

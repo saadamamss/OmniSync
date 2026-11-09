@@ -130,6 +130,22 @@ serve(async (req) => {
         // "Show why" panel consumes this; the widget never sees it.
         sources = results.map((c: any) => ({ title: c.title ?? "", matched_via: c.matched_via }));
       }
+      if (!contextChunks.length) {
+        // Zero retrieval hits: the bot must still have something to say.
+        // Feed the model its own recent knowledge judged on general
+        // relevance and let the system prompt keep it grounded — it may
+        // still politely decline if the chunks genuinely don't cover it.
+        const { data: recent } = await supabase
+          .from('knowledge_chunks')
+          .select('content, title')
+          .eq('chatbot_id', bot_id)
+          .order('created_at', { ascending: false })
+          .limit(3);
+        if (recent?.length) {
+          contextChunks = recent.map((c: any) => c.content);
+          sources = recent.map((c: any) => ({ title: c.title ?? "", matched_via: "recent" }));
+        }
+      }
     } catch (e) {
       console.error("[chat] Hybrid search failed:", (e as Error).message);
       // Last-resort fallback so a retriever bug degrades to few-chunks instead

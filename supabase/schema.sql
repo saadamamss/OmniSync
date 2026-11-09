@@ -278,20 +278,62 @@ returns table (
 language sql stable
 set search_path = public, pg_temp
 as $$
-  with q as (
-    select websearch_to_tsquery('simple', coalesce(p_query, '')) as tsq
+  with lex as (
+    -- Match ANY lexeme of the question, then grade by how many matched.
+    -- A strict websearch_to_tsquery (AND semantics) means "What is NexusCode?"
+    -- requires the chunk to literally contain "what" AND "is" AND
+    -- "nexuscode" — natural-language questions end up with zero hits even
+    -- when the answer is right there. Tokens are lexemes (no stemming, both
+    -- languages); the split already removed every non-alphanumeric char, so
+    -- they are safe to recombine into an OR tsquery below.
+    select array(
+      select distinct lower(w)
+      from unnest(
+        regexp_split_to_array(coalesce(p_query, ''), '[^[:alnum:]]+')
+      ) as w
+      where char_length(w) >= 2
+        -- Function words (both scripts) carry no retrieval value: as exact
+        -- lexemes they miss everything, and as substrings they match nearly
+        -- all prose. Dropping them also means pure small-talk ("من أنت؟")
+        -- leaves the keyword arm empty instead of matching noise.
+        and lower(w) <> all (array[
+          'what', 'is', 'are', 'you', 'who', 'how', 'the', 'and', 'for',
+          'with', 'please', 'can', 'does', 'do', 'me', 'my', 'i',
+          'من', 'ما', 'هو', 'هي', 'هل', 'على', 'في', 'عن', 'مع', 'إلى', 'الى',
+          'أنا', 'انا', 'انت', 'أنت', 'هذا', 'هذه', 'هذان', 'كنت', 'ليس'
+        ])
+    ) as words
   ),
-  -- Keyword arm: ranked by ts_rank_cd, not by insertion order. The rank is
-  -- what RRF consumes, so it must be meaningful.
+  -- Keyword arm: graded by ts_rank_cd over the OR query — a chunk matching
+  -- more of the question's words scores higher. Arabic and English get an
+  -- extra substring fallback: the 'simple' config does NOT stem Arabic, so
+  -- the exact lexeme of "أسعار" will never match the inflected "أسعارنا" or
+  -- "للمشاريع" that the chunk actually contains — but user words virtually
+  -- always appear as substrings of inflected words. The substring bonus is
+  -- half the ts_rank weight so indexed matches still outrank apprx ones.
+  -- The rank is what RRF consumes, so it must be meaningful.
   fts as (
     select k.id,
            row_number() over (
-             order by ts_rank_cd(k.tsv, q.tsq) desc, k.id
+             order by
+               ts_rank_cd(k.tsv, tsq)
+               + 0.5 * (
+                 select count(*) from unnest(l.words) t
+                 where position(t in lower(k.title || ' ' || k.content)) > 0
+               ),
+               k.id
            ) as rrf_rank
-    from knowledge_chunks k, q
+    from knowledge_chunks k, lex l
+    cross join lateral (select to_tsquery('simple', array_to_string(l.words, ' | ')) as tsq) q
     where k.chatbot_id = p_chatbot_id
-      and k.tsv @@ q.tsq
-    order by ts_rank_cd(k.tsv, q.tsq) desc, k.id
+      and coalesce(cardinality(l.words), 0) > 0
+      and (
+        k.tsv @@ q.tsq
+        or exists (
+          select 1 from unnest(l.words) t
+          where position(t in lower(k.content)) > 0
+        )
+      )
     limit p_match_count
   ),
   -- Semantic arm: empty when no embedding is supplied, which is what makes
