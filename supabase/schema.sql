@@ -547,22 +547,26 @@ $$ language plpgsql security definer;
 -- [H4] Wire enforce_plan_bot_limits() so the plan cap is enforced by the
 -- database, not just the frontend. Runs when a chatbot is created and when
 -- a plan changes (manual upgrade or Stripe webhook downgrade).
--- ATTENTION: this function is attached to two tables with different key
--- columns (chatbots.user_id vs profiles.id), so resolve the owner id from
--- whichever table fired the trigger. Hardcoding NEW.user_id made plan
--- updates on profiles fail with 'record "new" has no field "user_id"'.
-create or replace function public.apply_plan_bot_limits()
+-- ATTENTION: two separate functions, NOT one shared body with a TG_TABLE_NAME
+-- case — PL/pgSQL plans the whole expression against the record's structure,
+-- so mentioning NEW.user_id in a case branch crashes when the trigger fires
+-- on profiles (no user_id column) even if that branch would never run.
+create or replace function public.apply_plan_bot_limits_chatbots()
 returns trigger as $$
-declare
-  v_owner_id uuid;
-  v_plan text;
 begin
-  v_owner_id := case
-    when TG_TABLE_NAME = 'chatbots' then NEW.user_id
-    else NEW.id
-  end;
-  select plan into v_plan from profiles where id = v_owner_id;
-  perform enforce_plan_bot_limits(v_owner_id, coalesce(v_plan, 'starter'));
+  perform enforce_plan_bot_limits(
+    NEW.user_id,
+    coalesce((select plan from profiles where id = NEW.user_id), 'starter')
+  );
+  return null;
+end;
+$$ language plpgsql security definer;
+
+create or replace function public.apply_plan_bot_limits_profile()
+returns trigger as $$
+begin
+  -- NEW.plan is already the newly set plan; no ping-pong read needed.
+  perform enforce_plan_bot_limits(NEW.id, coalesce(NEW.plan, 'starter'));
   return null;
 end;
 $$ language plpgsql security definer;
@@ -570,12 +574,12 @@ $$ language plpgsql security definer;
 drop trigger if exists trg_apply_plan_bot_limits_on_insert on chatbots;
 create trigger trg_apply_plan_bot_limits_on_insert
   after insert on chatbots
-  for each row execute function public.apply_plan_bot_limits();
+  for each row execute function public.apply_plan_bot_limits_chatbots();
 
 drop trigger if exists trg_apply_plan_bot_limits_on_plan_change on profiles;
 create trigger trg_apply_plan_bot_limits_on_plan_change
   after update of plan on profiles
-  for each row execute function public.apply_plan_bot_limits();
+  for each row execute function public.apply_plan_bot_limits_profile();
 
 -- 6. message_usage table
 create table if not exists message_usage (
