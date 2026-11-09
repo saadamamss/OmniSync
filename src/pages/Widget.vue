@@ -266,4 +266,35 @@ onMounted(fetchBot);
   <div v-else-if="notFound" class="fixed bottom-4 right-4 p-3 bg-white rounded-xl shadow-lg border border-gray-200 text-xs text-gray-400 font-sans">
     Chat is unavailable
   </div>
+
+  <!-- Instant loading shell: shown from first paint (no blank/flash) until
+       the bot fetch resolves — a shape preview of the arriving chat. -->
+  <div v-else class="fixed bottom-0 w-full h-full flex flex-col items-end p-4 font-sans antialiased pointer-events-none">
+    <div class="mb-4 w-full max-w-[400px] h-[calc(100%-80px)] max-h-[600px] bg-white rounded-3xl shadow-2xl border border-gray-100 flex flex-col overflow-hidden pointer-events-auto" role="status" aria-busy="true" aria-label="Loading chat">
+      <!-- Header skeleton (neutral tone; real color arrives with the bot) -->
+      <div class="p-5 bg-gray-300/70 flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 bg-white/30 rounded-full animate-pulse motion-reduce:animate-none"></div>
+          <div class="space-y-2">
+            <div class="h-3 w-24 bg-white/40 rounded-full animate-pulse motion-reduce:animate-none"></div>
+            <div class="h-2 w-14 bg-white/30 rounded-full animate-pulse motion-reduce:animate-none"></div>
+          </div>
+        </div>
+      </div>
+      <!-- Chat bubble ghosts: welcome bubble left, then alternating -->
+      <div class="flex-1 overflow-y-auto p-5 space-y-4 bg-gray-50/50">
+        <div v-for="(m, i) in [0, 1, 0]" :key="i" :class="['flex', m ? 'justify-end' : 'justify-start']">
+          <div :class="['space-y-2 p-3.5 rounded-2xl shadow-sm', m ? 'bg-gray-200/60 rounded-tr-none' : 'bg-white border border-gray-100 rounded-tl-none']">
+            <div :class="['h-3 rounded-md bg-gray-200/80 animate-pulse motion-reduce:animate-none', i === 2 ? 'w-32' : 'w-48']"></div>
+            <div class="h-3 w-36 rounded-md bg-gray-200/80 animate-pulse motion-reduce:animate-none"></div>
+          </div>
+        </div>
+      </div>
+      <!-- Input skeleton -->
+      <div class="p-4 bg-white border-t border-gray-100 flex items-center space-x-2">
+        <div class="flex-1 h-11 bg-gray-100 rounded-xl animate-pulse motion-reduce:animate-none"></div>
+        <div class="w-10 h-10 rounded-xl bg-gray-200 animate-pulse motion-reduce:animate-none"></div>
+      </div>
+    </div>
+  </div>
 </template>

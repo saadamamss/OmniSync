@@ -3,7 +3,8 @@ import DashboardLayout from '@/layouts/DashboardLayout.vue';
 import { ref, onMounted, computed } from 'vue';
 import { supabase } from '@/integrations/supabase/client';
 import { useNotification } from '@/composables/useNotification';
-import { User, Mail, Calendar, Search, Download, Loader2, Inbox, Filter, Bot } from 'lucide-vue-next';
+import { User, Mail, Calendar, Search, Download, Inbox, Filter, Bot } from 'lucide-vue-next';
+import BaseSkeleton from '@/components/ui/BaseSkeleton.vue';
 
 const { showToast } = useNotification();
 
@@ -116,7 +117,13 @@ onMounted(async () => {
       </div>
 
       <!-- Filters -->
-      <div class="flex flex-wrap gap-4 mb-6">
+      <div v-if="loading" class="flex flex-wrap gap-4 mb-6" role="status" aria-busy="true">
+        <BaseSkeleton className="w-full md:w-64 h-12" rounded="rounded-xl" />
+        <BaseSkeleton className="w-full md:w-64 h-12" rounded="rounded-xl" />
+        <BaseSkeleton className="w-full md:w-64 h-12" rounded="rounded-xl" />
+      </div>
+
+      <div v-else class="flex flex-wrap gap-4 mb-6">
         <div class="relative w-full md:w-64">
           <Search class="absolute left-3 top-3 h-4 w-4 text-gray-400" />
           <input v-model="searchQuery" type="text" placeholder="Search name, email, or bot..."
@@ -139,8 +146,29 @@ onMounted(async () => {
       </div>
 
       <div class="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden">
-        <div v-if="loading" class="p-20 flex justify-center">
-          <Loader2 class="w-10 h-10 animate-spin text-orange-500" />
+        <div v-if="loading" role="status" aria-busy="true">
+          <!-- Ghost table header -->
+          <div class="bg-gray-50/50 px-8 py-4 flex">
+            <BaseSkeleton className="h-3 w-16 mr-16" />
+            <BaseSkeleton className="h-3 w-20 mr-16" />
+            <BaseSkeleton className="h-3 w-14 mr-16" />
+            <BaseSkeleton className="h-3 w-24 mr-16" />
+            <BaseSkeleton className="h-3 w-14" />
+          </div>
+          <!-- Ghost rows matching real columns: Contact / Source Bot / Status / Date / Action -->
+          <div v-for="i in 5" :key="i" class="px-8 py-6 border-t border-gray-50 flex items-center">
+            <div class="flex items-center space-x-3 flex-1">
+              <BaseSkeleton className="w-10 h-10" rounded="rounded-full" />
+              <div class="space-y-2">
+                <BaseSkeleton className="h-3.5 w-28" />
+                <BaseSkeleton className="h-2.5 w-36" />
+              </div>
+            </div>
+            <BaseSkeleton className="h-4 w-24 flex-1" />
+            <BaseSkeleton className="h-6 w-20 mr-16" rounded="rounded-md" />
+            <BaseSkeleton className="h-3.5 w-28 flex-1" />
+            <BaseSkeleton className="h-3.5 w-14" />
+          </div>
         </div>
 
         <div v-else-if="leads.length > 0" class="overflow-x-auto">

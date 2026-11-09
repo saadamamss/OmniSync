@@ -22,6 +22,7 @@ import BotPlayground from "@/components/bot/BotPlayground.vue";
 import BotEmbed from "@/components/bot/BotEmbed.vue";
 import BotPreview from "@/components/bot/BotPreview.vue";
 import BotConversations from "@/components/bot/BotConversations.vue";
+import BaseSkeleton from "@/components/ui/BaseSkeleton.vue";
 
 const { showToast, askConfirm } = useNotification();
 const route = useRoute();
@@ -164,8 +165,35 @@ onMounted(fetchBotData);
 
 <template>
   <DashboardLayout>
-    <div v-if="loading" class="flex items-center justify-center h-64">
-      <Loader2 class="w-8 h-8 animate-spin text-orange-500" />
+    <div v-if="loading" class="max-w-6xl mx-auto" role="status" aria-busy="true">
+      <!-- Header ghost: back chip + title bars left, action pills right -->
+      <div class="flex flex-col md:flex-row md:items-center justify-between mb-8 space-y-4 md:space-y-0">
+        <div class="flex items-center space-x-4">
+          <BaseSkeleton className="w-10 h-10" rounded="rounded-xl" />
+          <div class="space-y-2">
+            <BaseSkeleton className="h-6 w-52" rounded="rounded-lg" />
+            <div class="flex items-center space-x-2">
+              <BaseSkeleton className="h-3.5 w-14" rounded="rounded-full" />
+              <BaseSkeleton className="h-3 w-28" />
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center space-x-3">
+          <BaseSkeleton className="h-12 w-48" rounded="rounded-2xl" />
+          <BaseSkeleton className="h-12 w-40" rounded="rounded-2xl" />
+        </div>
+      </div>
+      <!-- Tab strip ghost -->
+      <div class="flex space-x-1 bg-gray-100 p-1.5 rounded-2xl mb-8 w-fit">
+        <BaseSkeleton v-for="i in 4" :key="i" className="h-9 w-32" rounded="rounded-xl" />
+      </div>
+      <!-- Tab body card ghost -->
+      <div class="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm p-8 space-y-4">
+        <BaseSkeleton className="h-5 w-56" rounded="rounded-lg" />
+        <BaseSkeleton className="h-3 w-full" />
+        <BaseSkeleton className="h-3 w-5/6" />
+        <BaseSkeleton className="h-3 w-2/3" />
+      </div>
     </div>
 
     <div v-else-if="bot" class="max-w-6xl mx-auto">
