@@ -16,7 +16,7 @@ import {
   AlertTriangle,
 } from "lucide-vue-next";
 
-import BotTraining from "@/components/bot/BotTraining.vue";
+import BotTrainingSources from "@/components/bot/BotTrainingSources.vue";
 import BotAppearance from "@/components/bot/BotAppearance.vue";
 import BotPlayground from "@/components/bot/BotPlayground.vue";
 import BotEmbed from "@/components/bot/BotEmbed.vue";
@@ -28,8 +28,6 @@ const route = useRoute();
 const router = useRouter();
 const bot = ref<any>(null);
 const originalBot = ref<any>(null);
-const chunks = ref<any[]>([]);
-const originalChunks = ref<any[]>([]);
 const loading = ref(true);
 const saving = ref(false);
 const activeTab = ref("training");
@@ -63,42 +61,14 @@ const fetchBotData = async () => {
     botData.settings.source_value = "";
   bot.value = botData;
   originalBot.value = JSON.parse(JSON.stringify(botData)); // Deep copy for comparison
-  await fetchChunks();
   loading.value = false;
 };
 
-const fetchChunks = async () => {
-  const { data: chunksData } = await supabase
-    .from("knowledge_chunks")
-    .select("*")
-    .eq("chatbot_id", bot.value.id)
-    .order("created_at", { ascending: true });
-  chunks.value = chunksData?.map((c) => ({ ...c, isExpanded: false })) || [];
-  originalChunks.value = JSON.parse(JSON.stringify(chunks.value)); // Deep copy for comparison
-};
-
+// Knowledge lives in training sources, which save themselves; only the bot
+// record is staged behind the Save button.
 const checkForChanges = () => {
   if (!originalBot.value || !bot.value) return false;
-
-  const botChanged =
-    JSON.stringify(bot.value) !== JSON.stringify(originalBot.value);
-  const chunksChanged =
-    JSON.stringify(chunks.value) !== JSON.stringify(originalChunks.value);
-
-  return botChanged || chunksChanged;
-};
-
-const handleAddChunk = (newChunk: any) => {
-  chunks.value.push(newChunk);
-  hasUnsavedChanges.value = true;
-};
-const handleBulkAdd = (newChunks: any[]) => {
-  chunks.value = [...chunks.value, ...newChunks];
-  hasUnsavedChanges.value = true;
-};
-const handleRemoveChunk = (index: number) => {
-  chunks.value.splice(index, 1);
-  hasUnsavedChanges.value = true;
+  return JSON.stringify(bot.value) !== JSON.stringify(originalBot.value);
 };
 
 const handleSave = async () => {
@@ -114,34 +84,12 @@ const handleSave = async () => {
     return;
   }
 
-  // Update knowledge base
-  await supabase
-    .from("knowledge_chunks")
-    .delete()
-    .eq("chatbot_id", bot.value.id);
-  const validChunks = chunks.value
-    .filter((c) => c.title.trim() || c.content.trim())
-    .map((c) => ({
-      chatbot_id: bot.value.id,
-      title: c.title,
-      content: c.content,
-    }));
-
-  if (validChunks.length > 0) {
-    const { error: chunkError } = await supabase
-      .from("knowledge_chunks")
-      .insert(validChunks);
-    if (chunkError) showToast("Error saving knowledge base", "error");
-  }
-
   showToast("Settings saved successfully!", "success");
   saving.value = false;
   hasUnsavedChanges.value = false;
-  await fetchChunks();
 
   // Update original data after successful save
   originalBot.value = JSON.parse(JSON.stringify(bot.value));
-  originalChunks.value = JSON.parse(JSON.stringify(chunks.value));
 };
 
 // Navigation guard to warn about unsaved changes
@@ -163,9 +111,9 @@ onBeforeRouteLeave(async (to, from, next) => {
 
 // Watch for changes to bot data
 watch(
-  [bot, chunks],
+  bot,
   () => {
-    if (originalBot.value && originalChunks.value) {
+    if (originalBot.value) {
       hasUnsavedChanges.value = checkForChanges();
     }
   },
@@ -351,16 +299,9 @@ onMounted(fetchBotData);
       <!-- Content Grid -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div class="lg:col-span-2 space-y-6">
-          <BotTraining
+          <BotTrainingSources
             v-if="activeTab === 'training'"
-            v-model:chunks="chunks"
-            v-model:websiteUrl="bot.settings.source_value"
-            :sourceType="bot.settings.source_type"
-            :botId="bot.id"
-            @add-chunk="handleAddChunk"
-            @bulk-add="handleBulkAdd"
-            @remove-chunk="handleRemoveChunk"
-            @refresh-chunks="fetchChunks"
+            :bot-id="bot.id"
           />
           <BotAppearance
             v-if="activeTab === 'appearance'"

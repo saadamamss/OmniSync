@@ -15,16 +15,66 @@ const chatContainer = ref<HTMLElement | null>(null);
 
 const showLeadForm = ref(false);
 const leadData = ref({ name: '', email: '' });
+const notFound = ref(false);
+
+const STORAGE_KEY_PREFIX = 'omnisync:conv:';
+
+const storageKey = (botId: string) => `${STORAGE_KEY_PREFIX}${botId}`;
+
+const saveConversation = (botId: string, convId: string) => {
+  try {
+    localStorage.setItem(
+      storageKey(botId),
+      JSON.stringify({ conversationId: convId, transcript: chatHistory.value })
+    );
+  } catch (e) {
+    // localStorage may be unavailable/quota-exceeded in some environments
+    console.warn('Could not persist conversation to localStorage:', e);
+  }
+};
+
+const restoreConversation = (botId: string) => {
+  try {
+    const stored = localStorage.getItem(storageKey(botId));
+    if (!stored) return;
+    const parsed = JSON.parse(stored);
+    conversationId.value = parsed.conversationId;
+    if (parsed.transcript && Array.isArray(parsed.transcript)) {
+      chatHistory.value = parsed.transcript;
+    }
+  } catch (e) {
+    console.warn('Could not restore conversation from localStorage:', e);
+  }
+};
 
 const fetchBot = async () => {
   const botId = route.query.id as string;
-  if (!botId) return;
+  if (!botId) {
+    notFound.value = true;
+    return;
+  }
 
-  const { data } = await supabase.from("chatbots").select("*").eq("id", botId).single();
+  // Public (anonymous) access — the RLS policy "Public can view active bots"
+  // limits rows to active bots; we limit columns to what the widget needs.
+  const { data } = await supabase
+    .from("chatbots")
+    .select("id, name, settings, is_active")
+    .eq("id", botId)
+    .single();
   if (data) {
     bot.value = data;
     chatHistory.value = [{ role: "assistant", content: data.settings.appearance.welcomeMessage }];
-    if (data.settings.appearance.collectLeads) showLeadForm.value = true;
+
+    // Restore an existing conversation thread from localStorage (identity survives reload)
+    restoreConversation(botId);
+
+    // Lead form is an optional pre-chat step — never a gate. Show it only when
+    // the bot requests lead capture AND we have no existing thread to resume.
+    if (data.settings.appearance.collectLeads && !conversationId.value) {
+      showLeadForm.value = true;
+    }
+  } else {
+    notFound.value = true;
   }
 };
 
@@ -32,44 +82,70 @@ watch(isOpen, (newVal) => {
   window.parent.postMessage(newVal ? "open-chat" : "close-chat", "*");
 });
 
-const startChat = async () => {
-  if (!leadData.value.name || !leadData.value.email) return;
-  
+const createConversation = async (visitorId?: string) => {
+  if (!bot.value) return null;
   try {
     const { data, error } = await supabase.from('conversations').insert({
       chatbot_id: bot.value.id,
-      visitor_id: `${leadData.value.name} (${leadData.value.email})`
+      visitor_id: visitorId || null,
     }).select().single();
-    
-    if (error) {
-      console.error('Error creating conversation:', error);
-      // Fallback: create conversation without visitor_id if RLS is blocking it
-      const { data: fallbackData, error: fallbackError } = await supabase.from('conversations').insert({
-        chatbot_id: bot.value.id,
-        visitor_id: null
-      }).select().single();
-      
-      if (fallbackError) {
-        console.error('Fallback error:', fallbackError);
-        return;
-      }
-      
-      if (fallbackData) {
-        conversationId.value = fallbackData.id;
-        showLeadForm.value = false;
-      }
-    } else if (data) {
+
+    if (error) throw error;
+    if (data) {
       conversationId.value = data.id;
-      showLeadForm.value = false;
+      saveConversation(bot.value.id, data.id);
+      return data;
     }
   } catch (err) {
-    console.error('Unexpected error in startChat:', err);
+    console.error('Error creating conversation:', err);
+  }
+  return null;
+};
+
+const createLead = async (conversationId: string, name: string, email: string) => {
+  if (!bot.value) return;
+  try {
+    const { error } = await supabase.from('leads').insert({
+      chatbot_id: bot.value.id,
+      conversation_id: conversationId,
+      name,
+      email,
+      status: 'new',
+    });
+    if (error) {
+      console.error('Error creating lead:', error);
+    }
+  } catch (err) {
+    console.error('Unexpected error creating lead:', err);
+  }
+};
+
+const startChat = async () => {
+  // Always-thread: create a conversation regardless of collectLeads.
+  // Lead data, when provided, fills visitor_id on the same conversation.
+  const conv = await createConversation(
+    leadData.value.name && leadData.value.email
+      ? `${leadData.value.name} (${leadData.value.email})`
+      : undefined
+  );
+  if (conv) {
+    showLeadForm.value = false;
+    // Capture the lead as a real pipeline record alongside the thread.
+    if (leadData.value.name && leadData.value.email && conversationId.value) {
+      await createLead(conversationId.value, leadData.value.name, leadData.value.email);
+    }
   }
 };
 
 const sendMessage = async (customMsg?: string) => {
   const userMsg = customMsg || message.value;
   if (!userMsg.trim() || isTyping.value) return;
+
+  // Ensure a conversation exists before sending (always-thread)
+  if (!conversationId.value) {
+    await createConversation();
+    if (!conversationId.value) return;
+  }
 
   chatHistory.value.push({ role: "user", content: userMsg });
   message.value = "";
@@ -88,7 +164,23 @@ const sendMessage = async (customMsg?: string) => {
       },
     });
     chatHistory.value.push({ role: "assistant", content: data.reply });
-  } catch (e) {
+    // Persist updated transcript (including assistant reply) to localStorage
+    if (bot.value && conversationId.value) {
+      saveConversation(bot.value.id, conversationId.value);
+    }
+  } catch (e: any) {
+    // Recovery from a dead thread: the owner may have deleted the conversation
+    // we restored from localStorage. The widget has no conversations SELECT
+    // right (RLS owner-only), so it can only learn from the chat function's
+    // ownership rejection. Drop the dead identity so the NEXT message starts
+    // a fresh thread instead of failing forever.
+    const msg: string = e?.message ?? e?.context ?? "";
+    if (conversationId.value && typeof msg === "string" && msg.includes("Conversation does not belong")) {
+      conversationId.value = null;
+      if (bot.value) {
+        try { localStorage.removeItem(storageKey(bot.value.id)); } catch {}
+      }
+    }
     chatHistory.value.push({ role: "assistant", content: "Sorry, I'm offline." });
   } finally {
     isTyping.value = false;
@@ -163,5 +255,10 @@ onMounted(fetchBot);
     <button @click="isOpen = !isOpen" class="w-12 h-12 rounded-full shadow-2xl flex items-center justify-center text-white transition-all hover:scale-110 active:scale-95 pointer-events-auto" :class="{ 'opacity-0 !w-0 !h-0 overflow-hidden': isOpen }" :style="{ backgroundColor: bot.settings.appearance.primaryColor }">
       <MessageSquare class="w-7 h-7" />
     </button>
+  </div>
+
+  <!-- Bot unavailable (missing id, deleted, or inactive) -->
+  <div v-else-if="notFound" class="fixed bottom-4 right-4 p-3 bg-white rounded-xl shadow-lg border border-gray-200 text-xs text-gray-400 font-sans">
+    Chat is unavailable
   </div>
 </template>

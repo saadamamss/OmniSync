@@ -1,7 +1,13 @@
 .dyad/
 .claude/
+.env
+.env.*
+!.env.example
 dist
 node_modules
 node_modules/
 repomix-output.xml
 plan/
+pnpm-lock.yaml
+pnpm-workspace.yaml
+supabase/.temp/

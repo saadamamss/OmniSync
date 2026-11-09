@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.0'
+import { generateEmbedding } from '../_shared/embeddings.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -8,10 +9,24 @@ const corsHeaders = {
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      status: 405,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
 
   try {
-    const { bot_id, message, history, conversation_id } = await req.json()
-    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+    const body = await req.json().catch(() => null)
+    if (!body) {
+      return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+    const { bot_id, message, history, conversation_id, include_sources } = body
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const supabase = createClient(supabaseUrl, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
 
     // 1. جلب بيانات البوت وإعداداته
     const { data: bot } = await supabase.from('chatbots').select('*').eq('id', bot_id).single()
@@ -45,6 +60,19 @@ serve(async (req) => {
 
     const plan = profile?.plan || 'starter';
 
+    // "Owner-only" must be proven, not requested. include_sources is a field in
+    // the request body, and the public widget calls this function with nothing
+    // but the anon key — trusting the flag would let anyone who knows a bot id
+    // read the titles of that owner's training documents. The caller's own JWT
+    // is the only thing that decides it.
+    let callerIsOwner = false
+    const authHeader = req.headers.get('Authorization') ?? ''
+    if (authHeader.startsWith('Bearer ')) {
+      const { data: caller } = await createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!)
+        .auth.getUser(authHeader.slice(7))
+      callerIsOwner = Boolean(caller?.user && caller.user.id === botOwner.user_id)
+    }
+
     // Message limits
     const MESSAGE_LIMITS: Record<string, number> = {
       starter: 1000,
@@ -67,91 +95,124 @@ serve(async (req) => {
       );
     }
 
-    // Increment count
-    await supabase.rpc('increment_message_usage', { p_user_id: botOwner.user_id });
+    // NOTE: usage is incremented only after a successful AI reply below —
+    // billing before the answer let any visitor drain an owner's quota for free.
 
-    const groqKey = Deno.env.get('GROQ_API_KEY');
-    const openAiKey = Deno.env.get('OPENAI_API_KEY');
-    
-    let contextChunks: string[] = [];
+    // Conversation ownership check FIRST: a doomed write must never reach the
+    // AI call (we'd pay for a reply we cannot store). Needs only bot_id, so
+    // it lives right here before the plan/limit machinery.
+    if (conversation_id) {
+      const { data: conv, error: convError } = await supabase
+        .from('conversations')
+        .select('chatbot_id')
+        .eq('id', conversation_id)
+        .single();
 
-    // 2. البحث الذكي (Vector Search) - إذا توفرت المفاتيح
-    if (openAiKey) {
-      try {
-        const embRes = await fetch("https://api.openai.com/v1/embeddings", {
-          method: "POST",
-          headers: { "Authorization": `Bearer ${openAiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({ input: message, model: "text-embedding-3-small" }),
-        });
-        if (embRes.ok) {
-          const embData = await embRes.json();
-          const { data: vectorResults } = await supabase.rpc('match_knowledge_chunks', {
-            query_embedding: embData.data[0].embedding,
-            match_threshold: 0.1, // عتبة منخفضة جداً لضمان إيجاد أي شيء قريب
-            match_count: 5,
-            p_chatbot_id: bot_id
-          });
-          if (vectorResults && vectorResults.length > 0) {
-            contextChunks = vectorResults.map((c: any) => c.content);
-          }
-        }
-      } catch (e) { console.error("[chat] Vector search failed:", e.message); }
-    }
-
-    // 3. البحث النصي المباشر (Keyword Search) - منقذ الموثوقية
-    // إذا لم نجد نتائج ذكية، أو لتعزيز النتائج، نبحث عن الكلمات في قاعدة البيانات مباشرة
-    const searchTerms = message.split(' ').filter((w: string) => w.length > 2);
-    if (searchTerms.length > 0) {
-      const { data: textResults } = await supabase
-        .from('knowledge_chunks')
-        .select('content')
-        .eq('chatbot_id', bot_id)
-        .or(searchTerms.map(term => `content.ilike.%${term}%`).join(','));
-      
-      if (textResults) {
-        textResults.forEach(r => {
-          if (!contextChunks.includes(r.content)) contextChunks.push(r.content);
-        });
+      if (convError || !conv || conv.chatbot_id !== bot_id) {
+        return new Response(
+          JSON.stringify({ error: 'Conversation does not belong to this bot' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
     }
 
-    // 4. إذا كان البوت لا يزال لا يملك سياقاً، نسحب آخر 10 قطع معرفية كخيار أخير
-    if (contextChunks.length === 0) {
+    const groqKey = Deno.env.get('GROQ_API_KEY');
+    if (!groqKey) throw new Error("GROQ_API_KEY not configured in Supabase secrets");
+    const openAiKey = Deno.env.get('OPENAI_API_KEY');
+    
+    let contextChunks: string[] = [];
+    let sources: { title: string; matched_via: string }[] = [];
+
+    // 2. Hybrid retrieval — the single search entry point.
+    // Keyword (FTS) always runs; the semantic arm activates only when an
+    // embedding is supplied, so one code path serves both plan tiers.
+    try {
+      let queryEmbedding: number[] | null = null;
+      if (openAiKey) {
+        try {
+          queryEmbedding = await generateEmbedding(message, openAiKey);
+        } catch (e) {
+          console.error("[chat] Query embedding failed, using keyword-only:", (e as Error).message);
+        }
+      }
+      const { data: results, error: searchError } = await supabase.rpc('hybrid_search_knowledge', {
+        p_chatbot_id: bot_id,
+        p_query: message,
+        p_query_embedding: queryEmbedding,
+        p_match_count: 3,
+      });
+      if (searchError) throw searchError;
+      if (results?.length) {
+        contextChunks = results.map((c: any) => c.content);
+        // matched_via: 'keyword' | 'semantic' | 'hybrid' — the Playground
+        // "Show why" panel consumes this; the widget never sees it.
+        sources = results.map((c: any) => ({ title: c.title ?? "", matched_via: c.matched_via }));
+      }
+      if (!contextChunks.length) {
+        // Zero retrieval hits: the bot must still have something to say.
+        // Feed the model its own recent knowledge judged on general
+        // relevance and let the system prompt keep it grounded — it may
+        // still politely decline if the chunks genuinely don't cover it.
+        const { data: recent } = await supabase
+          .from('knowledge_chunks')
+          .select('content, title')
+          .eq('chatbot_id', bot_id)
+          .order('created_at', { ascending: false })
+          .limit(3);
+        if (recent?.length) {
+          contextChunks = recent.map((c: any) => c.content);
+          sources = recent.map((c: any) => ({ title: c.title ?? "", matched_via: "recent" }));
+        }
+      }
+    } catch (e) {
+      console.error("[chat] Hybrid search failed:", (e as Error).message);
+      // Last-resort fallback so a retriever bug degrades to few-chunks instead
+      // of an empty context.
       const { data: fallbackChunks } = await supabase
         .from('knowledge_chunks')
         .select('content')
         .eq('chatbot_id', bot_id)
         .limit(5);
-      if (fallbackChunks) contextChunks = fallbackChunks.map(c => c.content);
+      if (fallbackChunks) contextChunks = fallbackChunks.map((c: any) => c.content);
     }
 
     const context = contextChunks.join("\n\n");
     const botName = bot.settings?.appearance?.botName || bot.name;
     const systemPrompt = bot.settings?.appearance?.systemPrompt || "";
 
-    // 5. تعليمات صارمة جداً للذكاء الاصطناعي
-    const finalPrompt = `أنت المساعد الرسمي لـ "${botName}".
-    يجب أن تكون إجاباتك مستمدة بنسبة 100% من "معلومات التدريب" المقدمة أدناه.
-    
-    معلومات التدريب الخاصة بك:
-    ${context || "لا توجد معلومات محددة حالياً، أجب بلباقة واعتذر عن عدم توفر المعلومة بدقة."}
-    
-    التعليمات:
-    - اسمك هو: ${botName}.
-    - ${systemPrompt}
-    - إذا سألك العميل عن شيء موجود في "معلومات التدريب"، أجب به فوراً.
-    - لا تخترع معلومات من عندك خارج السياق.
-    - تحدث بلهجة بشرية طبيعية تماماً.
-    - التزم بلغة المستخدم.`;
+    // 5. Strict AI instructions — written in English on purpose: the OSS
+    // model follows English instructions far more reliably than Arabic ones.
+    // The final rules force answering in the user's own language.
+    const finalPrompt = `You are the official assistant for "${botName}".
+Your answers must be derived 100% from the "training info" provided below.
+
+Training info (معلومات التدريب):
+${context || "No specific info is available right now — politely and briefly apologize for not having that detail."}
+
+STRICT RULES (never break these):
+1. Answer ONLY what was explicitly asked. Even if other facts sit in the same context — working hours, prices, email addresses, extra details — do NOT mention them unless the user directly asked for them.
+2. Be concise: one to three sentences maximum. Use a bullet list ONLY if the question itself enumerates (e.g. "how can I reach you?" may justify 2-3 lines).
+3. Never pour ALL the training info into one answer — pick only the part that answers the question asked.
+4. Never invent information outside the context. If the info is not in the training info, apologize briefly in one sentence and offer to help with something else.
+- Your name is: ${botName}.
+- Follow the bot owner's extra instruction if provided: ${systemPrompt}
+- Speak in a natural, human tone.
+- CRITICAL: always reply in the SAME LANGUAGE the user writes in (a user writing Arabic gets an Arabic reply; English gets English). Your reasoning may use English, but the reply text must match the user's language.`;
 
     const aiRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: 'openai/gpt-oss-20b',
+        // History is sanitized to the strict {role, content} shape Groq accepts —
+        // any extra property on an assistant message (e.g. Playground 'sources')
+        // causes a 400: "property 'sources' is unsupported".
         messages: [
           { role: 'system', content: finalPrompt },
-          ...(history || []).slice(-6),
+          ...((history || []) as any[])
+            .filter((m: any) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+            .slice(-6)
+            .map((m: any) => ({ role: m.role, content: m.content })),
           { role: 'user', content: message }
         ],
         temperature: 0.3, // تقليل العشوائية لزيادة الموثوقية
@@ -159,16 +220,33 @@ serve(async (req) => {
     });
 
     const result = await aiRes.json();
-    const reply = result.choices[0].message.content;
+    const reply = result.choices?.[0]?.message?.content;
+    if (!reply) {
+      throw new Error(`AI failed with ${aiRes.status}: ${JSON.stringify(result.error ?? result).slice(0, 300)}`);
+    }
 
+    // Bill the owner only for successful replies.
+    await supabase.rpc('increment_message_usage', { p_user_id: botOwner.user_id });
+
+    // Conversation ownership was verified early — right after the bot was
+    // fetched and BEFORE the AI call, so a doomed write never costs tokens.
     if (conversation_id) {
+      // Denormalize chatbot_id on messages so Analytics can query per-bot
+      // counts without a join.
       await supabase.from('messages').insert([
-        { conversation_id, role: 'user', content: message },
-        { conversation_id, role: 'assistant', content: reply }
+        { conversation_id, chatbot_id: bot_id, role: 'user', content: message },
+        { conversation_id, chatbot_id: bot_id, role: 'assistant', content: reply }
       ]);
     }
 
-    return new Response(JSON.stringify({ reply }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    // Sources are owner-only intel: flag-gated so the public widget never
+    // receives them (Playground passes include_sources: true).
+    const payload: Record<string, unknown> = { reply };
+    if (include_sources && callerIsOwner) {
+      payload.sources = sources.filter((s) => s.title);
+    }
+
+    return new Response(JSON.stringify(payload), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error) {
     return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders });
