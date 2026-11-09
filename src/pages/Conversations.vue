@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import DashboardLayout from '@/layouts/DashboardLayout.vue';
 import { ref, onMounted, computed } from 'vue';
+import { useRoute } from 'vue-router';
 import { supabase } from '@/integrations/supabase/client';
+
+const route = useRoute();
 import { 
   MessageSquare, 
   Search, 
@@ -115,9 +118,6 @@ const conversationTitle = (conv: any) => {
   return match ? match[1] : raw;
 };
 
-const onMountedFetch = () => fetchBots();
-onMounted(onMountedFetch);
-
 const formatDate = (date: string) => {
   return new Date(date).toLocaleDateString('en-US', {
     month: 'short',
@@ -139,6 +139,53 @@ const filteredConversations = computed(() => {
 });
 
 const initialLetter = (name: string) => name.charAt(0).toUpperCase();
+
+// Deep link (from Leads "View Chat" etc.): /dashboard/conversations?conversation=<id>
+// resolves the thread, opens its bot level and jumps straight to the transcript —
+// no manual drill-down through the same 0-point list.
+const deepLinkConversation = async (conversationId: string) => {
+  const { data: conv, error } = await supabase
+    .from('conversations')
+    .select('*')
+    .eq('id', conversationId)
+    .single();
+
+  if (error || !conv) {
+    console.warn('Deep-linked conversation not found:', conversationId);
+    return false;
+  }
+
+  const { data: bot, error: botError } = await supabase
+    .from('chatbots')
+    .select('id, name')
+    .eq('id', conv.chatbot_id)
+    .single();
+
+  selectedBot.value = bot ?? { id: conv.chatbot_id, name: '' };
+  loading.value = true;
+  view.value = 'conversations';
+  searchQuery.value = '';
+
+  const { data: list } = await supabase
+    .from('conversations')
+    .select('*')
+    .eq('chatbot_id', conv.chatbot_id)
+    .order('updated_at', { ascending: false });
+
+  conversations.value = list ?? [];
+  loading.value = false;
+  await openConversation(conv);
+  return true;
+};
+
+onMounted(async () => {
+  const targetId = route.query.conversation as string | undefined;
+  if (targetId) {
+    const ok = await deepLinkConversation(targetId);
+    if (ok) return;
+  }
+  fetchBots();
+});
 </script>
 
 <template>

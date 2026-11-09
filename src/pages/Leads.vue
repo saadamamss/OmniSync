@@ -180,7 +180,7 @@ onMounted(async () => {
                   <span class="text-sm text-gray-400 flex items-center"><Calendar class="w-4 h-4 mr-2" /> {{ new Date(lead.created_at).toLocaleDateString() }}</span>
                 </td>
                 <td class="px-8 py-6">
-                  <router-link to="/dashboard/conversations" class="text-sm font-bold text-orange-600 hover:underline">View Chat</router-link>
+                  <router-link :to="{ path: '/dashboard/conversations', query: { conversation: lead.conversation_id } }" class="text-sm font-bold text-orange-600 hover:underline">View Chat</router-link>
                 </td>
               </tr>
             </tbody>
