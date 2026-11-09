@@ -46,7 +46,11 @@ const sendMessage = async () => {
       body: {
         bot_id: props.botId,
         message: userMsg,
-        history: chatHistory.value.slice(-6, -1),
+        // History must carry ONLY {role, content} — extra fields (e.g. the
+        // stored `sources` for "Show why") make Groq reject the request.
+        history: chatHistory.value
+          .slice(-6, -1)
+          .map(({ role, content }: any) => ({ role, content })),
         // Owner-only intel: sources stay in the Playground; the public widget
         // never requests them. Always retrieved so the "Show why" toggle can
         // reveal past answers too.

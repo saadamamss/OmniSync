@@ -9,10 +9,24 @@ const corsHeaders = {
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
+  if (req.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
+      status: 405,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
+  }
 
   try {
-    const { bot_id, message, history, conversation_id, include_sources } = await req.json()
-    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+    const body = await req.json().catch(() => null)
+    if (!body) {
+      return new Response(JSON.stringify({ error: 'Invalid JSON body' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+    const { bot_id, message, history, conversation_id, include_sources } = body
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
+    const supabase = createClient(supabaseUrl, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
 
     // 1. جلب بيانات البوت وإعداداته
     const { data: bot } = await supabase.from('chatbots').select('*').eq('id', bot_id).single()
@@ -45,6 +59,19 @@ serve(async (req) => {
       .single();
 
     const plan = profile?.plan || 'starter';
+
+    // "Owner-only" must be proven, not requested. include_sources is a field in
+    // the request body, and the public widget calls this function with nothing
+    // but the anon key — trusting the flag would let anyone who knows a bot id
+    // read the titles of that owner's training documents. The caller's own JWT
+    // is the only thing that decides it.
+    let callerIsOwner = false
+    const authHeader = req.headers.get('Authorization') ?? ''
+    if (authHeader.startsWith('Bearer ')) {
+      const { data: caller } = await createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!)
+        .auth.getUser(authHeader.slice(7))
+      callerIsOwner = Boolean(caller?.user && caller.user.id === botOwner.user_id)
+    }
 
     // Message limits
     const MESSAGE_LIMITS: Record<string, number> = {
@@ -139,9 +166,15 @@ serve(async (req) => {
       headers: { 'Authorization': `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'openai/gpt-oss-20b',
+        // History is sanitized to the strict {role, content} shape Groq accepts —
+        // any extra property on an assistant message (e.g. Playground 'sources')
+        // causes a 400: "property 'sources' is unsupported".
         messages: [
           { role: 'system', content: finalPrompt },
-          ...(history || []).slice(-6),
+          ...((history || []) as any[])
+            .filter((m: any) => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+            .slice(-6)
+            .map((m: any) => ({ role: m.role, content: m.content })),
           { role: 'user', content: message }
         ],
         temperature: 0.3, // تقليل العشوائية لزيادة الموثوقية
@@ -167,7 +200,7 @@ serve(async (req) => {
     // Sources are owner-only intel: flag-gated so the public widget never
     // receives them (Playground passes include_sources: true).
     const payload: Record<string, unknown> = { reply };
-    if (include_sources) {
+    if (include_sources && callerIsOwner) {
       payload.sources = sources.filter((s) => s.title);
     }
 
