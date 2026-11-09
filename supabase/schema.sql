@@ -123,11 +123,16 @@ create table if not exists conversations (
 create table if not exists messages (
   id uuid default gen_random_uuid() primary key,
   conversation_id uuid references conversations(id) on delete cascade not null,
-  chatbot_id uuid references chatbots(id) on delete cascade,
   role text not null check (role in ('user', 'assistant')),
   content text not null,
   created_at timestamptz default now()
 );
+
+-- chatbot_id is denormalized for analytics (per-bot counts without a join).
+-- Must be an ALTER, not just part of create-table: existing databases never
+-- re-run create-if-not-exists. Nullable because legacy rows are backfilled
+-- by the migration at the end of this file.
+alter table messages add column if not exists chatbot_id uuid references chatbots(id) on delete cascade;
 
 create index if not exists messages_chatbot_idx
   on messages(chatbot_id);
