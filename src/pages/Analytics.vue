@@ -14,6 +14,7 @@ import {
   Target,
   Zap
 } from 'lucide-vue-next';
+import BaseSkeleton from '@/components/ui/BaseSkeleton.vue';
 
 const loading = ref(true);
 const stats = ref({
@@ -227,7 +228,18 @@ onMounted(fetchAnalytics);
 
       <div v-else class="space-y-8">
         <!-- Key Metrics -->
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div v-if="loading" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6" role="status" aria-busy="true">
+          <div v-for="i in 4" :key="i" class="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-4">
+            <div class="flex items-center justify-between">
+              <BaseSkeleton className="w-10 h-10" rounded="rounded-xl" />
+              <BaseSkeleton className="h-6 w-14" rounded="rounded-lg" />
+            </div>
+            <BaseSkeleton className="h-3 w-2/3" />
+            <BaseSkeleton className="h-8 w-1/2" rounded="rounded-xl" />
+          </div>
+        </div>
+
+        <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <div class="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all">
             <div class="flex items-center justify-between mb-4">
               <div class="bg-orange-50 p-2.5 rounded-xl text-orange-600"><MessageSquare class="w-5 h-5" /></div>
@@ -275,6 +287,45 @@ onMounted(fetchAnalytics);
           </div>
         </div>
 
+        <div v-if="loading" class="space-y-8" role="status" aria-busy="true">
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div v-for="i in 2" :key="i" class="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm">
+              <div class="flex items-center justify-between mb-8">
+                <BaseSkeleton className="h-5 w-40" rounded="rounded-lg" />
+                <BaseSkeleton className="w-4 h-4" rounded="rounded-full" />
+              </div>
+              <div v-if="i === 1" class="flex items-end justify-between h-48 space-x-2">
+                <div v-for="h in [55, 75, 40, 85, 60, 35, 70]" :key="h" class="flex-1">
+                  <div class="w-full bg-gray-100/80 animate-pulse rounded-t-xl" :style="{ height: h + '%' }"></div>
+                </div>
+              </div>
+              <div v-else class="space-y-6">
+                <div v-for="r in 3" :key="r" class="space-y-2">
+                  <div class="flex justify-between">
+                    <BaseSkeleton className="h-3.5 w-28" />
+                    <BaseSkeleton className="h-3.5 w-16" />
+                  </div>
+                  <BaseSkeleton className="h-2 w-full" rounded="rounded-full" />
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden">
+            <div class="p-8 border-b border-gray-50">
+              <BaseSkeleton className="h-5 w-52" rounded="rounded-lg" />
+            </div>
+            <div class="divide-y divide-gray-50">
+              <div v-for="r in 3" :key="r" class="px-8 py-6 flex items-center">
+                <BaseSkeleton className="h-4 w-40 mr-10" />
+                <BaseSkeleton className="h-4 w-16 mr-10" />
+                <BaseSkeleton className="h-4 w-16 mr-10" />
+                <BaseSkeleton className="h-4 w-24" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <template v-else>
         <!-- Charts Section -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <div class="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm">
@@ -342,6 +393,7 @@ onMounted(fetchAnalytics);
             </table>
           </div>
         </div>
+        </template>
       </div>
     </div>
   </DashboardLayout>

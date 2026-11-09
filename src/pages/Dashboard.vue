@@ -18,6 +18,7 @@ import {
   AlertTriangle
 } from 'lucide-vue-next';
 import { useRouter, useRoute } from 'vue-router';
+import BaseSkeleton from '@/components/ui/BaseSkeleton.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -176,7 +177,17 @@ onMounted(() => {
       </div>
 
       <!-- Stats Grid -->
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
+      <div v-if="loading" class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10" role="status" aria-busy="true">
+        <div v-for="i in 4" :key="i" class="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-4">
+          <BaseSkeleton className="h-3 w-2/3" />
+          <BaseSkeleton className="h-10 w-1/3" rounded="rounded-xl" />
+          <div class="space-y-2">
+            <BaseSkeleton className="h-2 w-full" rounded="rounded-full" />
+            <BaseSkeleton className="h-1.5 w-full" rounded="rounded-full" />
+          </div>
+        </div>
+      </div>
+      <div v-else class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
         <div class="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm relative overflow-hidden group">
           <div class="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
             <MessageSquare class="w-12 h-12 text-orange-600" />
@@ -238,7 +249,7 @@ onMounted(() => {
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <!-- Onboarding Checklist -->
         <div class="lg:col-span-2 space-y-6">
-          <div v-if="stats.totalConversations === 0" class="bg-white p-8 rounded-[2.5rem] border border-orange-100 shadow-sm bg-gradient-to-br from-white to-orange-50/30">
+          <div v-if="!loading && stats.totalConversations === 0" class="bg-white p-8 rounded-[2.5rem] border border-orange-100 shadow-sm bg-gradient-to-br from-white to-orange-50/30">
             <h2 class="text-xl font-bold mb-6 flex items-center">
               <Zap class="w-5 h-5 mr-2 text-orange-500" />
               Quick Start Guide
@@ -263,8 +274,19 @@ onMounted(() => {
               <router-link to="/dashboard/bots" class="text-orange-600 text-sm font-bold hover:underline">View All</router-link>
             </div>
 
-            <div v-if="loading" class="p-12 flex justify-center">
-              <Loader2 class="w-8 h-8 animate-spin text-orange-500" />
+            <div v-if="loading" class="divide-y divide-gray-50" role="status" aria-busy="true">
+              <div v-for="i in 3" :key="i" class="p-6 flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                  <div class="bg-gray-100 p-3 rounded-2xl">
+                    <BaseSkeleton className="w-6 h-6" rounded="rounded-lg" />
+                  </div>
+                  <div class="space-y-2">
+                    <BaseSkeleton className="h-4 w-36" />
+                    <BaseSkeleton className="h-2.5 w-24" />
+                  </div>
+                </div>
+                <BaseSkeleton className="w-9 h-9" rounded="rounded-lg" />
+              </div>
             </div>
 
             <div v-else-if="bots.length > 0" class="divide-y divide-gray-50">
@@ -299,8 +321,17 @@ onMounted(() => {
               <h2 class="font-bold text-lg">Recent Activity</h2>
             </div>
             
-            <div v-if="loading" class="p-12 flex justify-center">
-              <Loader2 class="w-6 h-6 animate-spin text-orange-500" />
+            <div v-if="loading" class="divide-y divide-gray-50" role="status" aria-busy="true">
+              <div v-for="i in 3" :key="i" class="p-4">
+                <div class="flex items-center justify-between mb-2">
+                  <BaseSkeleton className="h-3 w-28" />
+                  <BaseSkeleton className="h-2.5 w-16" />
+                </div>
+                <div class="flex items-center justify-between">
+                  <BaseSkeleton className="h-2.5 w-40" />
+                  <BaseSkeleton className="w-3 h-3" />
+                </div>
+              </div>
             </div>
 
             <div v-else-if="recentConversations.length > 0" class="divide-y divide-gray-50">

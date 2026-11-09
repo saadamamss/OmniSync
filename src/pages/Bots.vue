@@ -140,9 +140,20 @@ onMounted(fetchBots);
           class="w-full pl-12 pr-4 py-3.5 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-orange-500 outline-none transition-all shadow-sm" />
       </div>
 
-      <div v-if="loading" class="py-20 flex flex-col items-center justify-center text-gray-400">
-        <Loader2 class="w-10 h-10 animate-spin mb-4 text-orange-500" />
-        <p class="font-medium">Loading your assistants...</p>
+      <div v-if="loading" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" role="status" aria-busy="true">
+        <div v-for="i in 3" :key="i" class="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm space-y-4">
+          <div class="flex items-start justify-between mb-2">
+            <BaseSkeleton className="w-12 h-12" rounded="rounded-2xl" />
+            <div class="flex space-x-1">
+              <BaseSkeleton className="w-8 h-8" rounded="rounded-lg" />
+              <BaseSkeleton className="w-8 h-8" rounded="rounded-lg" />
+            </div>
+          </div>
+          <BaseSkeleton className="h-5 w-2/3" rounded="rounded-lg" />
+          <BaseSkeleton className="h-3 w-full" />
+          <BaseSkeleton className="h-3 w-1/2" />
+          <BaseSkeleton className="h-10 w-full" rounded="rounded-xl" />
+        </div>
       </div>
 
       <div v-else-if="filteredBots.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
