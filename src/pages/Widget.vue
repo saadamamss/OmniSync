@@ -85,16 +85,21 @@ watch(isOpen, (newVal) => {
 const createConversation = async (visitorId?: string) => {
   if (!bot.value) return null;
   try {
-    const { data, error } = await supabase.from('conversations').insert({
-      chatbot_id: bot.value.id,
-      visitor_id: visitorId || null,
-    }).select().single();
+    // Thread creation runs through a definer RPC: the widget's insert used
+    // `returning` for the new id, but PostgREST also runs returned rows
+    // through the SELECT policy — invisible to an anonymous creator, hence
+    // the RLS 42501 only on third-party sites. The RPC validates the bot
+    // server-side and returns only the fresh id, no SELECT rights granted.
+    const { data, error } = await supabase.rpc('create_widget_conversation', {
+      p_chatbot_id: bot.value.id,
+      p_visitor_id: visitorId || null,
+    });
 
     if (error) throw error;
     if (data) {
-      conversationId.value = data.id;
-      saveConversation(bot.value.id, data.id);
-      return data;
+      conversationId.value = data;
+      saveConversation(bot.value.id, data);
+      return { id: data };
     }
   } catch (err) {
     console.error('Error creating conversation:', err);
