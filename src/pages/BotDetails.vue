@@ -68,10 +68,13 @@ const fetchBotData = async () => {
 };
 
 const fetchChunks = async () => {
+  // Only hand-written topics are edited here. Chunks that belong to a
+  // training source are managed (and deleted) with that source.
   const { data: chunksData } = await supabase
     .from("knowledge_chunks")
     .select("*")
     .eq("chatbot_id", bot.value.id)
+    .is("document_id", null)
     .order("created_at", { ascending: true });
   chunks.value = chunksData?.map((c) => ({ ...c, isExpanded: false })) || [];
   originalChunks.value = JSON.parse(JSON.stringify(chunks.value)); // Deep copy for comparison
@@ -114,11 +117,13 @@ const handleSave = async () => {
     return;
   }
 
-  // Update knowledge base
+  // Replace only the manual topics. Deleting every chunk would destroy
+  // document lineage and the chunks of indexed sources.
   await supabase
     .from("knowledge_chunks")
     .delete()
-    .eq("chatbot_id", bot.value.id);
+    .eq("chatbot_id", bot.value.id)
+    .is("document_id", null);
   const validChunks = chunks.value
     .filter((c) => c.title.trim() || c.content.trim())
     .map((c) => ({

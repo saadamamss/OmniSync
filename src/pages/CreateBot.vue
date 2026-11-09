@@ -15,10 +15,13 @@ import {
   CheckCircle2,
 } from 'lucide-vue-next';
 import { useNotification } from '@/composables/useNotification';
-import * as pdfjsLib from 'pdfjs-dist';
-import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+import {
+  TrainingError,
+  extractPdfText,
+  ingestDocument,
+  removeTrainingFile,
+  uploadTrainingFile,
+} from '@/integrations/training';
 
 const router = useRouter();
 const { showToast } = useNotification();
@@ -27,6 +30,7 @@ const botName = ref('');
 const sourceType = ref('text');
 const sourceValue = ref('');
 const pdfFileName = ref('');
+const pdfFile = ref<File | null>(null);
 const isExtractingPdf = ref(false);
 const loading = ref(false);
 const checkingPlan = ref(true);
@@ -71,15 +75,6 @@ const checkPlanLimits = async () => {
   checkingPlan.value = false;
 };
 
-const chunkText = (text: string, wordsPerChunk = 600) => {
-  const words = text.split(/\s+/);
-  const chunks = [];
-  for (let i = 0; i < words.length; i += wordsPerChunk) {
-    chunks.push(words.slice(i, i + wordsPerChunk).join(' '));
-  }
-  return chunks;
-};
-
 const handleFileUpload = async (event: Event) => {
   const target = event.target as HTMLInputElement;
   const file = target.files?.[0];
@@ -90,9 +85,13 @@ const handleFileUpload = async (event: Event) => {
     try {
       const text = await extractPdfText(file);
       if (text.trim().length < 30) {
+        pdfFile.value = null;
+        pdfFileName.value = '';
+        sourceValue.value = '';
         showToast('This PDF appears to be scanned images with no selectable text — extraction is not possible.', 'warning');
       } else {
         sourceValue.value = text;
+        pdfFile.value = file;
         pdfFileName.value = file.name;
         showToast(`Extracted ${Math.round(text.length / 1000)}k characters from PDF.`, 'success');
       }
@@ -104,6 +103,7 @@ const handleFileUpload = async (event: Event) => {
     }
   } else {
     // For text files, read content as before
+    pdfFile.value = null;
     pdfFileName.value = file.name;
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -114,33 +114,15 @@ const handleFileUpload = async (event: Event) => {
   target.value = '';
 };
 
-// Real client-side PDF text extraction (Mozilla PDF.js).
-// Extracted text flows into the same chunkText() pipeline as pasted text —
-// no fake "PDF uploaded" placeholder chunks.
-const extractPdfText = async (file: File): Promise<string> => {
-  const data = new Uint8Array(await file.arrayBuffer());
-  const doc = await pdfjsLib.getDocument({ data }).promise;
-  const pages: string[] = [];
-  for (let i = 1; i <= doc.numPages; i++) {
-    const page = await doc.getPage(i);
-    const content = await page.getTextContent();
-    pages.push(
-      content.items
-        .map((item: any) => item.str)
-        .join(' ')
-        .replace(/\s+/g, ' ')
-        .trim()
-    );
-  }
-  return pages.filter(Boolean).join('\n\n');
-};
-
 const handleCreate = async () => {
   if (planLimitReached.value) return;
   
   loading.value = true;
   const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
+  if (!user) {
+    loading.value = false;
+    return;
+  }
 
   // 1. Create the chatbot
   const { data: bot, error: botError } = await supabase
@@ -149,7 +131,9 @@ const handleCreate = async () => {
       name: botName.value,
       user_id: user.id,
       settings: {
-        source_type: sourceType.value,
+        // Legacy-friendly copy of the source choice ('file' is the modern
+        // taxonomy; 'pdf' kept for older code paths that read this field).
+        source_type: sourceType.value === 'pdf' ? 'file' : sourceType.value,
         source_value: '',
         appearance: {
           primaryColor: '#f97316',
@@ -168,35 +152,57 @@ const handleCreate = async () => {
     return;
   }
 
-  // 2. Handle Training Data
-  if (sourceType.value === 'pdf') {
-    if (!sourceValue.value.trim()) {
-      showToast('No text could be extracted from the PDF — pick a text-based PDF or paste the content manually.', 'error');
-      loading.value = false;
-      return;
+  // 2. Index the training data through the single ingestion pipeline.
+  // The original PDF goes to Storage first so the knowledge can be rebuilt
+  // later without asking the user to upload it again.
+  let ingestError: string | null = null;
+  try {
+    if (sourceType.value === 'pdf') {
+      if (!sourceValue.value.trim()) {
+        ingestError =
+          'No text could be extracted from the PDF — pick a text-based PDF or paste the content manually.';
+      } else {
+        let storagePath: string | null = null;
+        if (pdfFile.value) {
+          storagePath = await uploadTrainingFile(bot.id, pdfFile.value);
+        }
+        try {
+          await ingestDocument({
+            botId: bot.id,
+            title: pdfFileName.value || 'PDF import',
+            sourceType: 'file',
+            text: sourceValue.value,
+            storagePath,
+          });
+        } catch (error) {
+          if (storagePath) {
+            await removeTrainingFile(storagePath).catch(() => undefined);
+          }
+          throw error;
+        }
+      }
+    } else if (sourceValue.value.trim()) {
+      await ingestDocument({
+        botId: bot.id,
+        title: 'Initial Training',
+        sourceType: 'text',
+        text: sourceValue.value,
+      });
     }
-    const chunks = chunkText(sourceValue.value);
-    await supabase
-      .from('knowledge_chunks')
-      .insert(chunks.map(content => ({
-        chatbot_id: bot.id,
-        content,
-        title: `PDF: ${pdfFileName.value}`
-      })));
-    router.push('/dashboard/bots');
-  } else {
-    if (sourceValue.value.trim()) {
-      const chunks = chunkText(sourceValue.value);
-      await supabase
-        .from('knowledge_chunks')
-        .insert(chunks.map(content => ({
-          chatbot_id: bot.id,
-          content,
-          title: 'Initial Training'
-        })));
-    }
-    router.push('/dashboard/bots');
+  } catch (error) {
+    const failure = error as TrainingError;
+    ingestError = failure.message || 'Training failed.';
   }
+
+  loading.value = false;
+
+  if (ingestError) {
+    showToast(ingestError, 'error');
+  } else {
+    showToast('Chatbot created and trained!', 'success');
+  }
+
+  router.push(`/dashboard/bots/${bot.id}`);
 };
 
 onMounted(checkPlanLimits);

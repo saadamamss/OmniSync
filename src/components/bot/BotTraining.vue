@@ -12,6 +12,7 @@ import {
   CheckCircle2,
 } from "lucide-vue-next";
 import { useNotification } from "@/composables/useNotification";
+import BotTrainingSources from "@/components/bot/BotTrainingSources.vue";
 
 interface Chunk {
   id?: string;
@@ -55,7 +56,7 @@ const removeChunk = async (index: number) => {
 const clearAllChunks = async () => {
   const confirmed = await askConfirm(
     "Clear All?",
-    "Are you sure you want to clear ALL knowledge topics? This cannot be undone.",
+    "Are you sure you want to clear ALL manual topics? Training sources are not affected. This cannot be undone.",
   );
   if (confirmed) {
     emit("update:chunks", []);
@@ -120,7 +121,10 @@ const handleBulkUpload = (event: Event) => {
 
 <template>
   <div class="space-y-6">
-    <!-- Knowledge Manager -->
+    <!-- Sources of truth: pasted text + uploaded files -->
+    <BotTrainingSources :bot-id="botId" />
+
+    <!-- Manual topics written by hand -->
     <div class="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm">
       <div
         class="flex flex-col sm:flex-row sm:items-center justify-between mb-8 space-y-4 sm:space-y-0"
@@ -130,9 +134,9 @@ const handleBulkUpload = (event: Event) => {
             <BrainCircuit class="w-6 h-6" />
           </div>
           <div>
-            <h3 class="text-xl font-bold">Knowledge Base</h3>
+            <h3 class="text-xl font-bold">Manual Topics</h3>
             <p class="text-xs text-gray-400">
-              {{ chunks.length }} topics indexed
+              {{ chunks.length }} hand-written topics
             </p>
           </div>
         </div>
@@ -185,7 +189,8 @@ const handleBulkUpload = (event: Event) => {
             No knowledge topics found.
           </p>
           <p class="text-xs text-gray-300 mt-1">
-            Add topics manually or bulk import them to train your AI.
+            Add topics manually or bulk import them — they are indexed alongside
+            your training sources.
           </p>
         </div>
 

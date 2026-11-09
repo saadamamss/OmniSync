@@ -10,3 +10,4 @@ repomix-output.xml
 plan/
 pnpm-lock.yaml
 pnpm-workspace.yaml
+supabase/.temp/

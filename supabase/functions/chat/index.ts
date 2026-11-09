@@ -11,7 +11,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
 
   try {
-    const { bot_id, message, history, conversation_id } = await req.json()
+    const { bot_id, message, history, conversation_id, include_sources } = await req.json()
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
 
     // 1. جلب بيانات البوت وإعداداته
@@ -76,48 +76,43 @@ serve(async (req) => {
     const openAiKey = Deno.env.get('OPENAI_API_KEY');
     
     let contextChunks: string[] = [];
+    let sources: { title: string; matched_via: string }[] = [];
 
-    // 2. البحث الذكي (Vector Search) - إذا توفرت المفاتيح
-    if (openAiKey) {
-      try {
-        const queryEmbedding = await generateEmbedding(message, openAiKey);
-        const { data: vectorResults } = await supabase.rpc('match_knowledge_chunks', {
-          query_embedding: queryEmbedding,
-          match_threshold: 0.1, // عتبة منخفضة جداً لضمان إيجاد أي شيء قريب
-          match_count: 5,
-          p_chatbot_id: bot_id
-        });
-        if (vectorResults && vectorResults.length > 0) {
-          contextChunks = vectorResults.map((c: any) => c.content);
+    // 2. Hybrid retrieval — the single search entry point.
+    // Keyword (FTS) always runs; the semantic arm activates only when an
+    // embedding is supplied, so one code path serves both plan tiers.
+    try {
+      let queryEmbedding: number[] | null = null;
+      if (openAiKey) {
+        try {
+          queryEmbedding = await generateEmbedding(message, openAiKey);
+        } catch (e) {
+          console.error("[chat] Query embedding failed, using keyword-only:", (e as Error).message);
         }
-      } catch (e) { console.error("[chat] Vector search failed:", e.message); }
-    }
-
-    // 3. البحث النصي المباشر (Keyword Search) - منقذ الموثوقية
-    // إذا لم نجد نتائج ذكية، أو لتعزيز النتائج، نبحث عن الكلمات في قاعدة البيانات مباشرة
-    const searchTerms = message.split(' ').filter((w: string) => w.length > 2);
-    if (searchTerms.length > 0) {
-      const { data: textResults } = await supabase
-        .from('knowledge_chunks')
-        .select('content')
-        .eq('chatbot_id', bot_id)
-        .or(searchTerms.map(term => `content.ilike.%${term}%`).join(','));
-      
-      if (textResults) {
-        textResults.forEach(r => {
-          if (!contextChunks.includes(r.content)) contextChunks.push(r.content);
-        });
       }
-    }
-
-    // 4. إذا كان البوت لا يزال لا يملك سياقاً، نسحب آخر 10 قطع معرفية كخيار أخير
-    if (contextChunks.length === 0) {
+      const { data: results, error: searchError } = await supabase.rpc('hybrid_search_knowledge', {
+        p_chatbot_id: bot_id,
+        p_query: message,
+        p_query_embedding: queryEmbedding,
+        p_match_count: 5,
+      });
+      if (searchError) throw searchError;
+      if (results?.length) {
+        contextChunks = results.map((c: any) => c.content);
+        // matched_via: 'keyword' | 'semantic' | 'hybrid' — the Playground
+        // "Show why" panel consumes this; the widget never sees it.
+        sources = results.map((c: any) => ({ title: c.title ?? "", matched_via: c.matched_via }));
+      }
+    } catch (e) {
+      console.error("[chat] Hybrid search failed:", (e as Error).message);
+      // Last-resort fallback so a retriever bug degrades to few-chunks instead
+      // of an empty context.
       const { data: fallbackChunks } = await supabase
         .from('knowledge_chunks')
         .select('content')
         .eq('chatbot_id', bot_id)
         .limit(5);
-      if (fallbackChunks) contextChunks = fallbackChunks.map(c => c.content);
+      if (fallbackChunks) contextChunks = fallbackChunks.map((c: any) => c.content);
     }
 
     const context = contextChunks.join("\n\n");
@@ -143,7 +138,7 @@ serve(async (req) => {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${groqKey}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: 'openai/gpt-oss-20b',
         messages: [
           { role: 'system', content: finalPrompt },
           ...(history || []).slice(-6),
@@ -169,7 +164,14 @@ serve(async (req) => {
       ]);
     }
 
-    return new Response(JSON.stringify({ reply }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    // Sources are owner-only intel: flag-gated so the public widget never
+    // receives them (Playground passes include_sources: true).
+    const payload: Record<string, unknown> = { reply };
+    if (include_sources) {
+      payload.sources = sources.filter((s) => s.title);
+    }
+
+    return new Response(JSON.stringify(payload), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error) {
     return new Response(JSON.stringify({ error: error.message }), { status: 500, headers: corsHeaders });
