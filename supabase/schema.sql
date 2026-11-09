@@ -316,6 +316,43 @@ create policy "Users can update own bot leads"
 
 -- No delete policy: deleting the conversation cascades the lead.
 
+-- create_widget_conversation (PLAN-12 Phase 1/2 revisited)
+-- An anonymous widget visitor must create a thread AND receive its id, but
+-- must never gain a conversations SELECT policy (that would expose every
+-- other visitor's transcripts). A definer-side RPC solves both: it validates
+-- the bot server-side and returns only the new id.
+-- Needed because PostgREST `insert ... returning` also runs the returned row
+-- through the SELECT policy, and the row is invisible to its creator (42501).
+create or replace function public.create_widget_conversation(
+  p_chatbot_id uuid,
+  p_visitor_id text default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_id uuid;
+begin
+  if not exists (
+    select 1 from chatbots where id = p_chatbot_id and is_active
+  ) then
+    raise exception 'BOT_NOT_ACTIVE: conversations can only be created for active bots'
+      using errcode = 'P0001';
+  end if;
+
+  insert into conversations (chatbot_id, visitor_id)
+  values (p_chatbot_id, p_visitor_id)
+  returning id into v_id;
+
+  return v_id;
+end;
+$$;
+
+revoke all on function public.create_widget_conversation(uuid, text) from public;
+grant execute on function public.create_widget_conversation(uuid, text) to anon, authenticated;
+
 -- match_knowledge_chunks function
 drop function if exists match_knowledge_chunks(vector, float, int, uuid);
 create or replace function match_knowledge_chunks(
