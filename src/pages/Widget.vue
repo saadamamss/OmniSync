@@ -102,6 +102,24 @@ const createConversation = async (visitorId?: string) => {
   return null;
 };
 
+const createLead = async (conversationId: string, name: string, email: string) => {
+  if (!bot.value) return;
+  try {
+    const { error } = await supabase.from('leads').insert({
+      chatbot_id: bot.value.id,
+      conversation_id: conversationId,
+      name,
+      email,
+      status: 'new',
+    });
+    if (error) {
+      console.error('Error creating lead:', error);
+    }
+  } catch (err) {
+    console.error('Unexpected error creating lead:', err);
+  }
+};
+
 const startChat = async () => {
   // Always-thread: create a conversation regardless of collectLeads.
   // Lead data, when provided, fills visitor_id on the same conversation.
@@ -112,6 +130,10 @@ const startChat = async () => {
   );
   if (conv) {
     showLeadForm.value = false;
+    // Capture the lead as a real pipeline record alongside the thread.
+    if (leadData.value.name && leadData.value.email && conversationId.value) {
+      await createLead(conversationId.value, leadData.value.name, leadData.value.email);
+    }
   }
 };
 

@@ -128,6 +128,24 @@ create table if not exists messages (
   created_at timestamptz default now()
 );
 
+-- 6. leads table (PLAN-12 Phase 2)
+-- One lead per conversation thread; status tracks the sales pipeline.
+create table if not exists leads (
+  id uuid default gen_random_uuid() primary key,
+  chatbot_id uuid references chatbots(id) on delete cascade not null,
+  conversation_id uuid references conversations(id) on delete cascade not null unique,
+  name text not null,
+  email text not null,
+  status text not null default 'new' check (status in ('new', 'contacted', 'won', 'lost')),
+  created_at timestamptz default now()
+);
+
+create index if not exists leads_chatbot_idx
+  on leads(chatbot_id);
+
+create index if not exists leads_conversation_idx
+  on leads(conversation_id);
+
 -- ── PLAN-12 Phase 1 indexes: stop seq-scans on thread & analytics reads ──
 create index if not exists conversations_chatbot_idx
   on conversations(chatbot_id);
@@ -253,6 +271,41 @@ create policy "Users can view messages of own bots"
 -- conversation). Kept as an explicit drop so rerunning this file removes it
 -- from databases that created it with an older version of the schema.
 drop policy if exists "Anyone can insert messages (widget + chat function)" on messages;
+
+-- leads
+-- RLS must be explicitly enabled: Supabase defaults new tables to it being
+-- OFF, and an enabled-but-policy-less state is the only safe default here.
+alter table leads enable row level security;
+
+-- Owners can view leads of their own bots.
+drop policy if exists "Users can view own bot leads" on leads;
+create policy "Users can view own bot leads"
+  on leads for select
+  using (chatbot_id in (
+    select id from chatbots where user_id = auth.uid()
+  ));
+
+-- Widget can create leads for active bots (same gate as conversations).
+drop policy if exists "Anyone can create leads (widget)" on leads;
+create policy "Anyone can create leads (widget)"
+  on leads for insert
+  with check (exists (
+    select 1 from chatbots b
+    where b.id = chatbot_id and b.is_active
+  ));
+
+-- Owners move leads through the pipeline (new -> contacted -> won/lost).
+drop policy if exists "Users can update own bot leads" on leads;
+create policy "Users can update own bot leads"
+  on leads for update
+  using (chatbot_id in (
+    select id from chatbots where user_id = auth.uid()
+  ))
+  with check (chatbot_id in (
+    select id from chatbots where user_id = auth.uid()
+  ));
+
+-- No delete policy: deleting the conversation cascades the lead.
 
 -- match_knowledge_chunks function
 drop function if exists match_knowledge_chunks(vector, float, int, uuid);
@@ -631,3 +684,27 @@ set chunk_count = (
 where d.title = 'Legacy topics'
   and d.content_hash is null
   and d.storage_path is null;
+
+-- ── PLAN-12 Phase 2 legacy migration: backfill leads from existing conversations ──
+-- Parse "Name (email)" out of conversations.visitor_id and insert as leads.
+-- Regex is used instead of split_part: greedy first group survives names that
+-- themselves contain " (" e.g. "My Company (LLC) (a@b.com)".
+-- Idempotent (no lead yet) and safe per-row (empty/malformed emails are
+-- skipped instead of aborting the batch on the not-null constraint).
+insert into leads (chatbot_id, conversation_id, name, email, status, created_at)
+select
+  c.chatbot_id,
+  c.id,
+  m[1],
+  m[2],
+  'new',
+  c.created_at
+from conversations c
+cross join lateral regexp_match(c.visitor_id, '^(.*) \(([^()]+)\)$') as m
+where c.visitor_id is not null
+  and m[1] is not null
+  and m[1] <> ''
+  and m[2] ~* '^[^@\s]+@[^@\s]+\.[^@\s]+$'
+  and not exists (
+    select 1 from leads l where l.conversation_id = c.id
+  );
