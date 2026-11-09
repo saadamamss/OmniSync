@@ -7,7 +7,6 @@ import {
   Plus, 
   MessageSquare, 
   Settings, 
-  Loader2,
   TrendingUp,
   Users,
   MessageCircle,

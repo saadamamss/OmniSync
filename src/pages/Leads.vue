@@ -3,7 +3,7 @@ import DashboardLayout from '@/layouts/DashboardLayout.vue';
 import { ref, onMounted, computed } from 'vue';
 import { supabase } from '@/integrations/supabase/client';
 import { useNotification } from '@/composables/useNotification';
-import { User, Mail, Calendar, Search, Download, Loader2, Inbox, Filter, Bot } from 'lucide-vue-next';
+import { User, Mail, Calendar, Search, Download, Inbox, Filter, Bot } from 'lucide-vue-next';
 import BaseSkeleton from '@/components/ui/BaseSkeleton.vue';
 
 const { showToast } = useNotification();

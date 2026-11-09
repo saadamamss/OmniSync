@@ -9,7 +9,6 @@ import {
   Search, 
   Trash2, 
   Settings,
-  Loader2,
   ExternalLink,
   AlertTriangle,
   ArrowUpCircle,
