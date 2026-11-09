@@ -228,10 +228,14 @@ STRICT RULES (never break these):
     // Bill the owner only for successful replies.
     await supabase.rpc('increment_message_usage', { p_user_id: botOwner.user_id });
 
+    // Conversation ownership was verified early — right after the bot was
+    // fetched and BEFORE the AI call, so a doomed write never costs tokens.
     if (conversation_id) {
+      // Denormalize chatbot_id on messages so Analytics can query per-bot
+      // counts without a join.
       await supabase.from('messages').insert([
-        { conversation_id, role: 'user', content: message },
-        { conversation_id, role: 'assistant', content: reply }
+        { conversation_id, chatbot_id: bot_id, role: 'user', content: message },
+        { conversation_id, chatbot_id: bot_id, role: 'assistant', content: reply }
       ]);
     }
 

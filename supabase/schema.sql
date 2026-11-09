@@ -123,10 +123,14 @@ create table if not exists conversations (
 create table if not exists messages (
   id uuid default gen_random_uuid() primary key,
   conversation_id uuid references conversations(id) on delete cascade not null,
+  chatbot_id uuid references chatbots(id) on delete cascade,
   role text not null check (role in ('user', 'assistant')),
   content text not null,
   created_at timestamptz default now()
 );
+
+create index if not exists messages_chatbot_idx
+  on messages(chatbot_id);
 
 -- 6. leads table (PLAN-12 Phase 2)
 -- One lead per conversation thread; status tracks the sales pipeline.
@@ -708,3 +712,39 @@ where c.visitor_id is not null
   and not exists (
     select 1 from leads l where l.conversation_id = c.id
   );
+
+-- ── PLAN-12 Phase 3: backfill messages.chatbot_id from conversations join ──
+-- Denormalized column lets Analytics query per-bot message counts without a
+-- join; chat function writes it going forward.
+update messages m
+set chatbot_id = c.chatbot_id
+from conversations c
+where m.conversation_id = c.id
+  and m.chatbot_id is null;
+
+-- ── PLAN-12 Phase 3: conversation_stats view ──
+-- One cheap view for Analytics: message counts, first→last duration, owner
+-- fields. Reads hit indexed columns only.
+create or replace view public.conversation_stats as
+select
+  c.id as conversation_id,
+  c.chatbot_id,
+  c.updated_at as last_activity,
+  count(m.id) as message_count,
+  min(m.created_at) as first_message_at,
+  max(m.created_at) as last_message_at,
+  case
+    when min(m.created_at) is not null and max(m.created_at) is not null
+    then extract(epoch from (max(m.created_at) - min(m.created_at))) / 60
+  end as duration_minutes
+from conversations c
+left join messages m on m.conversation_id = c.id
+group by c.id, c.chatbot_id, c.updated_at;
+
+-- Postgres views are SECURITY DEFINER by default: the underlying
+-- conversations/messages RLS is NOT applied to callers. With security_invoker
+-- the view executes with the caller's identity, so owners see only their own
+-- stats, and anon must not receive it.
+alter view public.conversation_stats set (security_invoker = on);
+revoke select on public.conversation_stats from anon;
+grant select on public.conversation_stats to authenticated;
